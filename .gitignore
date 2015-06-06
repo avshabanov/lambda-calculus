@@ -6,4 +6,7 @@ target
 
 lib
 
+# Common Lisp
+*.fasl
+
 .DS_Store

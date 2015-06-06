@@ -7,6 +7,8 @@ At the moment it is implemented for the following lisp dialects:
 
 ## Performance
 
+Tested on mid-2013 Mac Book Pro 13''.
+
 ```
 ;; -----------------------------------------------------------------------------
 ;; SBCL Performance:
@@ -27,8 +29,8 @@ At the moment it is implemented for the following lisp dialects:
 ;;
 ;; -----------------------------------------------------------------------------
 ;; SBCL Performance (max optimizations):
-;; - (declaim (optimize (debug 0) (safety 0) (speed 3) (space 0)))
-;; - (load "lc.lisp") (compile-file "lc.lisp") (load "lc.fasl")
+;; - Preparations: (declaim (optimize (debug 0) (safety 0) (speed 3) (space 0)))
+;; - Loaded as follows: (progn (load "lambda-calculus.lisp") (compile-file "lambda-calculus.lisp") (load "lambda-calculus.fasl") "DONE")
 ;;
 ;;    (time (lc (pow n9 n9) inc 0))
 ;;
