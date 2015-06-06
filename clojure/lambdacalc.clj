@@ -2,7 +2,7 @@
 
 ;; Debug variables for tracing lambda calc execution
 (def ^:dynamic *stat-call* (atom 0))
-(def stat-enabled true) ; debug will be turned off if false (and thus *won't affect exection*)
+(def stat-enabled false) ; debug will be turned off if false (and thus *won't affect exection*)
 
 (defn print-stats []
   (println ";; Execution Statistics")

@@ -48,13 +48,22 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; 9.5 seconds
 ;;
 ;; -----------------------------------------------------------------------------
-;; Clojure Performance:
+;; Clojure Performance (with statistics):
 ;; (time (numcall pow (nth N 9) (nth N 9)))
 ;;
-;;    "Elapsed time: 19578.087145 msecs"
+;;    "Elapsed time: 19578.087 msecs"
 ;;    387420489
 ;; ---
 ;; 19.6 seconds
+;;
+;; -----------------------------------------------------------------------------
+;; Clojure Performance (without statistics):
+;; (time (numcall pow (nth N 9) (nth N 9)))
+;;
+;;    "Elapsed time: 7324.266 msecs"
+;;    387420489
+;; ---
+;; 7.3 seconds
 ;;
 
 ```
