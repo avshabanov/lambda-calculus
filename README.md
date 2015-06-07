@@ -4,6 +4,10 @@ Illustrations on how lambda calculus primitives can be implemented in various li
 At the moment it is implemented for the following lisp dialects:
 * Clojure (tested on version 1.6.0)
 * Common Lisp (tested on SBCL 1.2.2)
+* Scheme (tested on tinyscheme and scheme48, latest versions taken from brew repos at 2015-06-06)
+
+The most advanced implementation at the moment is a clojure one, it includes Church numerals, boolean logic and inline tests.
+The others include just Church numerals and power function.
 
 ## Performance
 
@@ -57,13 +61,10 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; 19.6 seconds
 ;;
 ;; -----------------------------------------------------------------------------
-;; Clojure Performance (without statistics):
-;; (time (numcall pow (nth N 9) (nth N 9)))
-;;
-;;    "Elapsed time: 7324.266 msecs"
-;;    387420489
+;; Scheme Performance:
+;; ((((pow n9) n9) inc) 0)
 ;; ---
-;; 7.3 seconds
+;; >1 minute
 ;;
 
 ```
