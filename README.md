@@ -61,11 +61,23 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; 19.6 seconds
 ;;
 ;; -----------------------------------------------------------------------------
+;; Clojure Performance (no statistics):
+;; (time (numcall pow (nth N 9) (nth N 9)))
+;;
+;;    "Elapsed time: 7625.926 msecs"
+;;    387420489
+;; ---
+;; 7.6 seconds
+;;
+;; -----------------------------------------------------------------------------
 ;; Scheme Performance:
 ;; ((((pow n9) n9) inc) 0)
 ;; ---
 ;; >1 minute
 ;;
-
+;; -----------------------------------------------------------------------------
+;; Java Performance:
+;; N9^N9 = Int_value=387420489, executionTime=4217
+;; ---
+;; 4.2 seconds
 ```
-
