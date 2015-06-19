@@ -52,6 +52,16 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; 9.5 seconds
 ;;
 ;; -----------------------------------------------------------------------------
+;; CLISP Performance 
+;;  (time (lc (pow n9 n9) inc 0))
+;; Real time: 242.38795 sec.
+;; Run time: 241.44707 sec.
+;; Space: 27894276992 Bytes
+;; GC: 34414, GC time: 112.93121 sec.
+;; 387420489
+;; ---
+;; 242.4 seconds
+;; -----------------------------------------------------------------------------
 ;; Clojure Performance (with statistics):
 ;; (time (numcall pow (nth N 9) (nth N 9)))
 ;;
@@ -80,4 +90,31 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; N9^N9 = Int_value=387420489, executionTime=4217
 ;; ---
 ;; 4.2 seconds
+;; -----------------------------------------------------------------------------
+;; NodeJS Performance:
+;; lc.pow(lc.succ(lc.N[8]))(lc.succ(lc.N[8]))(lc.inc)(0)
+;; --> 387420489
+;;
+;; var t=(new Date().getTime()); var ret = lc.pow(lc.succ(lc.N[8]))(lc.succ(lc.N[8]))(lc.inc)(0); t = (new Date().getTime()) - t;
+;;
+;; t=17830 msec
+;; ---
+;; 17.8 seconds
 ```
+
+## NodeJS Implementation How To
+
+```
+var lc = require("./lambdacalc.js");
+
+// inc check:
+
+lc.N[0](lc.inc)(0); // -> 0
+lc.N[1](lc.inc)(0); // -> 1
+lc.N[8](lc.inc)(0); // -> 8
+
+// pow check:
+lc.pow(lc.N[2])(lc.N[3])(lc.inc)(0); // -> 8
+lc.pow(lc.N[3])(lc.N[2])(lc.inc)(0); // -> 9
+```
+
