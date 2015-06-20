@@ -1,41 +1,53 @@
+/**
+ * Incarnation of LambdaCalc "done right" - using interfaces to show the difference between invokevirtual and
+ * invokeinterface.
+ */
+public class LambdaCalc2 {
+  interface Atom {
+    int intValue();
 
+    Atom fn(Atom atom);
+  }
 
-public class LambdaCalc {
-  abstract static class Atom {
-    int intValue() {
-      throw new UnsupportedOperationException("function can't be casted to int");
+  abstract static class AbstractAtom implements Atom {
+    @Override
+    public int intValue() {
+      throw new UnsupportedOperationException();
     }
 
-    abstract Atom fn(Atom atom);
+    @Override
+    public Atom fn(Atom atom) {
+      throw new UnsupportedOperationException();
+    }
   }
 
 
   //  (def zero (% s (% z z)))
-  static final class Zero extends Atom {
-    static final class Z extends Atom {
+  static final class Zero extends AbstractAtom {
+    static final class Z extends AbstractAtom {
       @Override
-      Atom fn(Atom z) { return z; }
+      public Atom fn(Atom z) { return z; }
     }
 
     static final Z lambdaZ = new Z(); /* optimization */
 
     @Override
-    Atom fn(Atom s) { return lambdaZ; }
+    public Atom fn(Atom s) { return lambdaZ; }
   }
 
   static final Zero ZERO = new Zero();
 
   //  (def succ (% n (% s (% z s ((n s) z)))))
-  static final class Succ extends Atom {
+  static final class Succ extends AbstractAtom {
 
     @Override
-    Atom fn(final Atom n) {
-      return new Atom() {
+    public Atom fn(final Atom n) {
+      return new AbstractAtom() {
         @Override
-        Atom fn(final Atom s) {
-          return new Atom() {
+        public Atom fn(final Atom s) {
+          return new AbstractAtom() {
             @Override
-            Atom fn(Atom z) {
+            public Atom fn(Atom z) {
               return s.fn(n.fn(s).fn(z));
             }
           };
@@ -46,7 +58,7 @@ public class LambdaCalc {
 
   static final Succ SUCC = new Succ();
 
-  static final class Int extends Atom {
+  static final class Int extends AbstractAtom {
     final int value;
 
     public Int(int value) {
@@ -54,13 +66,8 @@ public class LambdaCalc {
     }
 
     @Override
-    int intValue() {
+    public int intValue() {
       return value;
-    }
-
-    @Override
-    Atom fn(Atom atom) {
-      throw new UnsupportedOperationException("int value is a primitive");
     }
 
     @Override
@@ -69,10 +76,10 @@ public class LambdaCalc {
     }
   }
 
-  static final class Increment extends Atom {
+  static final class Increment extends AbstractAtom {
 
     @Override
-    Atom fn(Atom atom) {
+    public Atom fn(Atom atom) {
       return new Int(atom.intValue() + 1);
     }
   }
@@ -93,7 +100,7 @@ public class LambdaCalc {
   }
 
   public static void main(String[] args) {
-    System.out.println("LambdaCalc - java");
+    System.out.println("LambdaCalc2 - java");
 
     for (int i = 0; i < N.length; ++i) {
       System.out.println("N" + i + "(inc, 0) = " + numcall(N[i]));
@@ -108,7 +115,7 @@ public class LambdaCalc {
       long executionTime = System.currentTimeMillis();
       final Atom result = numcall(N[9].fn(N[9]));
       executionTime = System.currentTimeMillis() - executionTime;
-      System.out.println("[invokevirtual] Attempt #" + i + " N9^N9 = " + result + ", executionTime=" + executionTime);
+      System.out.println("[invokeinterface] Attempt #" + i + " N9^N9 = " + result + ", executionTime=" + executionTime);
     }
   }
 }
