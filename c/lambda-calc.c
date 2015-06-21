@@ -21,6 +21,7 @@ static void* mem_alloc(int size);
  */
 
 struct atom_vtbl_t {
+  const char*         name;
   int                 (* to_int)(void* self);
   struct atom_t*      (* f1)(void* self, struct atom_t* arg);
 };
@@ -47,14 +48,16 @@ static struct atom_t* notimpl_f1(void* self, struct atom_t* arg) {
   return arg; /* should not come here */
 }
 
-#define DEFINE_INTFN_VTBL(vtbl_name, to_int_fn_name) \
+#define DEFINE_INTFN_VTBL(class_name, vtbl_name, to_int_fn_name) \
   static struct atom_vtbl_t vtbl_name = { \
+    .name = class_name, \
     .to_int = to_int_fn_name, \
     .f1 = notimpl_f1 \
   }
 
-#define DEFINE_F1_VTBL(vtbl_name, f1_fn_name) \
+#define DEFINE_F1_VTBL(class_name, vtbl_name, f1_fn_name) \
   static struct atom_vtbl_t vtbl_name = { \
+    .name = class_name, \
     .to_int = notimpl_to_int, \
     .f1 = f1_fn_name \
   }
@@ -71,7 +74,7 @@ static struct atom_t* notimpl_f1(void* self, struct atom_t* arg) {
 static struct atom_t* lambda_z_f1(void* self, struct atom_t* z) {
   return z;
 }
-DEFINE_F1_VTBL(g_lambda_z_vtbl, lambda_z_f1);
+DEFINE_F1_VTBL("Zero.Z", g_lambda_z_vtbl, lambda_z_f1);
 static struct atom_t ZERO_LAMBDA_Z = {
   .vtbl = &g_lambda_z_vtbl
 };
@@ -81,7 +84,7 @@ static struct atom_t ZERO_LAMBDA_Z = {
 static struct atom_t* zero_s_f1(void* self, struct atom_t* ignored) {
   return &ZERO_LAMBDA_Z;
 }
-DEFINE_F1_VTBL(g_zero_vtbl, zero_s_f1);
+DEFINE_F1_VTBL("Zero", g_zero_vtbl, zero_s_f1);
 static struct atom_t ZERO = {
   .vtbl = &g_zero_vtbl
 };
@@ -103,7 +106,7 @@ static struct atom_t* succ_fn_z_f1(void* self, struct atom_t* z) {
   struct atom_t* nsz = F1(ns, z);   /* ((n s) z) */
   return F1(s, nsz);                /* (s ((n s) z)) */
 }
-DEFINE_F1_VTBL(g_succ_fn_z_atom_vtbl_t, succ_fn_z_f1);
+DEFINE_F1_VTBL("Succ.S.Z", g_succ_fn_z_atom_vtbl_t, succ_fn_z_f1);
 static struct atom_t* new_succ_fn_z(struct atom_t* n, struct atom_t* s) {
   struct succ_fn_z_atom_t* result = mem_alloc(sizeof(struct succ_fn_z_atom_t));
   result->vtbl = &g_succ_fn_z_atom_vtbl_t;
@@ -122,7 +125,7 @@ static struct atom_t* succ_fn_s_f1(void* self, struct atom_t* s) {
   struct atom_t* n = this->n;
   return new_succ_fn_z(n, s);
 }
-DEFINE_F1_VTBL(g_succ_fn_s_atom_vtbl_t, succ_fn_s_f1);
+DEFINE_F1_VTBL("Succ.S", g_succ_fn_s_atom_vtbl_t, succ_fn_s_f1);
 static struct atom_t* new_succ_fn_s(struct atom_t* n) {
   struct succ_fn_s_atom_t* result = mem_alloc(sizeof(struct succ_fn_s_atom_t));
   result->vtbl = &g_succ_fn_s_atom_vtbl_t;
@@ -134,7 +137,7 @@ static struct atom_t* new_succ_fn_s(struct atom_t* n) {
 static struct atom_t* succ_f1(void* self, struct atom_t* n) {
   return new_succ_fn_s(n);
 }
-DEFINE_F1_VTBL(g_succ_vtbl, succ_f1);
+DEFINE_F1_VTBL("Succ", g_succ_vtbl, succ_f1);
 static struct atom_t SUCC = {
   .vtbl = &g_succ_vtbl
 };
@@ -149,7 +152,7 @@ static int intatom_to_int(void* self) {
   struct int_atom_t* a = (struct int_atom_t*) self;
   return a->value;
 }
-DEFINE_INTFN_VTBL(g_int_vtbl, intatom_to_int);
+DEFINE_INTFN_VTBL("Int", g_int_vtbl, intatom_to_int);
 static struct atom_t* new_int(int value) {
   struct int_atom_t* a = mem_alloc(sizeof(struct int_atom_t));
   a->vtbl = &g_int_vtbl;
@@ -162,7 +165,7 @@ static struct atom_t* new_int(int value) {
 static struct atom_t* inc_f1(void* self, struct atom_t* num) {
   return new_int(num->vtbl->to_int(num) + 1);
 }
-DEFINE_F1_VTBL(g_inc_vtbl, inc_f1);
+DEFINE_F1_VTBL("Inc", g_inc_vtbl, inc_f1);
 static struct atom_t INC = {
   .vtbl = &g_inc_vtbl
 };
@@ -236,27 +239,32 @@ static int to_int(struct atom_t* a) {
   return a->vtbl->to_int(a);
 }
 
+static int pow(struct atom_t* base, struct atom_t* exponent) {
+  struct atom_t* result = F1(exponent, base);
+  //fprintf(stdout, "result.name=%s\n", result->vtbl->name);
+  return to_int(F1(F1(result, &INC), new_int(0)));
+}
+
 #define N (10)
 
 int main(int argc, const char** argv) {
-  struct atom_t* zero = &ZERO;
-  struct atom_t* succ = &SUCC;
-  struct atom_t* inc = &INC;
-
   struct atom_t* n[N];
   for (int i = 0; i < N; ++i) {
     if (i == 0) {
-      n[0] = zero;
+      n[0] = &ZERO;
     } else {
-      n[i] = F1(succ, n[i - 1]);
+      n[i] = F1(&SUCC, n[i - 1]);
     }
   }
 
   /* convert to int */
   for (int i = 0; i < N; ++i) {
-    int num = to_int(F1(F1(n[i], inc), new_int(0)));
+    int num = to_int(F1(F1(n[i], &INC), new_int(0)));
     fprintf(stdout, "(num#%d inc 0) = %d\n", i, num);
   }
+
+  fprintf(stdout, "N2^N3 = %d\n", pow(n[2], n[3]));
+  fprintf(stdout, "N3^N2 = %d\n", pow(n[3], n[2]));
 
   return 0;
 }
