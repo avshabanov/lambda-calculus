@@ -2,9 +2,14 @@
 
 /* gcc -Wall -Werror -Wimplicit -pedantic -std=c99 -O3 lambda-calc.c -o /tmp/lc */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
+
+/* perf measurement */
+#include <sys/time.h>
 
 /*
  * forward decls
@@ -241,11 +246,19 @@ static int to_int(struct atom_t* a) {
 
 static int pow(struct atom_t* base, struct atom_t* exponent) {
   struct atom_t* result = F1(exponent, base);
-  //fprintf(stdout, "result.name=%s\n", result->vtbl->name);
+  /*fprintf(stdout, "result.name=%s\n", result->vtbl->name);*/
   return to_int(F1(F1(result, &INC), new_int(0)));
 }
 
 #define N (10)
+
+#define NANO_UNIT       (1000000000LL)
+
+static void print_formatted_nano_time(long long nano_time, FILE * os) {
+    long long sec = nano_time / NANO_UNIT;
+    long long nanos = (nano_time - (sec * NANO_UNIT));
+    fprintf(os, "nano_time = %lld sec %06lld %03lld msec\n", sec, nanos / 1000, nanos % 1000);
+}
 
 int main(int argc, const char** argv) {
   struct atom_t* n[N];
@@ -257,14 +270,34 @@ int main(int argc, const char** argv) {
     }
   }
 
-  /* convert to int */
-  for (int i = 0; i < N; ++i) {
-    int num = to_int(F1(F1(n[i], &INC), new_int(0)));
-    fprintf(stdout, "(num#%d inc 0) = %d\n", i, num);
+  bool calcN9 = false;
+  if (argc > 1 && 0 == strcmp(argv[1], "n9")) {
+    calcN9 = true;
   }
 
-  fprintf(stdout, "N2^N3 = %d\n", pow(n[2], n[3]));
-  fprintf(stdout, "N3^N2 = %d\n", pow(n[3], n[2]));
+  if (calcN9) {
+    /* Demo: N9^N9 */
+    struct timeval start;
+    struct timeval stop;
+
+    gettimeofday(&start, NULL);
+    int result = pow(n[9], n[9]);
+    gettimeofday(&stop, NULL);
+
+    long long nano_time = (stop.tv_sec - start.tv_sec) * NANO_UNIT + (stop.tv_usec - start.tv_usec) * 1000L;
+
+    fprintf(stdout, "N9^N9 = %d\n", result);
+    print_formatted_nano_time(nano_time, stdout);
+  } else {
+    /* Demo: illustrate num folding */
+    for (int i = 0; i < N; ++i) {
+      int num = to_int(F1(F1(n[i], &INC), new_int(0)));
+      fprintf(stdout, "(num#%d inc 0) = %d\n", i, num);
+    }
+
+    fprintf(stdout, "N2^N3 = %d\n", pow(n[2], n[3]));
+    fprintf(stdout, "N3^N2 = %d\n", pow(n[3], n[2]));
+  }
 
   return 0;
 }

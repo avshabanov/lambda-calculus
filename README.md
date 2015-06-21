@@ -100,6 +100,14 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; t=17830 msec
 ;; ---
 ;; 17.8 seconds
+;; -----------------------------------------------------------------------------
+;; C Performance:
+;; $ gcc -Wall -Werror -Wimplicit -pedantic -std=c99 -O3 lambda-calc.c -o /tmp/lc
+;; $ /tmp/lc n9
+;; N9^N9 = 387420489
+;; nano_time = 12 sec 333215 000 msec
+;; ---
+;; 12 seconds (6 times more than in Java)
 ```
 
 ## NodeJS Implementation How To
