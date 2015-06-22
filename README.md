@@ -107,7 +107,7 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; N9^N9 = 387420489
 ;; nano_time = 12 sec 333215 000 msec
 ;; ---
-;; 12 seconds (6 times more than in Java)
+;; 12 seconds
 ```
 
 ## NodeJS Implementation How To
