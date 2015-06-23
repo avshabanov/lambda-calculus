@@ -101,13 +101,21 @@ Tested on mid-2013 Mac Book Pro 13''.
 ;; ---
 ;; 17.8 seconds
 ;; -----------------------------------------------------------------------------
-;; C Performance:
+;; C Performance (naive memory management, VERY memory consuming, 16Gb of RAM recommended):
 ;; $ gcc -Wall -Werror -Wimplicit -pedantic -std=c99 -O3 lambda-calc.c -o /tmp/lc
 ;; $ /tmp/lc n9
 ;; N9^N9 = 387420489
 ;; nano_time = 12 sec 333215 000 msec
 ;; ---
 ;; 12 seconds
+;; -----------------------------------------------------------------------------
+;; C++ Performance (using shared_ptr for memory management, memory friendly version):
+;; $ g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 LambdaCalc.cpp -o /tmp/lcpp
+;; $ /tmp/lcpp
+;; N9^N9 = 387420489
+;; nano_time = 112 sec 410575 0 msec
+;; ---
+;; 112 seconds
 ```
 
 ## NodeJS Implementation How To
