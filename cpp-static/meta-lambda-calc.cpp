@@ -1,3 +1,5 @@
+// meta lambda calc (original author: Evgeny.Panasyuk)
+
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++1y -fsyntax-only meta-lambda-calc.cpp
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++1y meta-lambda-calc.cpp -Os -o /tmp/mlc
 
