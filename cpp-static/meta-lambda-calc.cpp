@@ -2,6 +2,9 @@
 
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++1y -fsyntax-only meta-lambda-calc.cpp
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++1y meta-lambda-calc.cpp -Os -o /tmp/mlc
+//
+// If you have godlike compiler (may not work for some compilers such as g++-llvm 6.0):
+// g++ -DI_CAN_WAIT=1 -Wall -Werror -Wimplicit -pedantic -std=c++1y meta-lambda-calc.cpp -Os -o /tmp/mlc-big
 
 #include <iostream>
 
