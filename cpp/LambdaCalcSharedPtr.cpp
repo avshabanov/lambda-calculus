@@ -1,7 +1,7 @@
-// g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -fsyntax-only LambdaCalc.cpp
-// g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 LambdaCalc.cpp -o /tmp/lcpp
-
-// Then calc N9^N9 - /tmp/lcpp n9
+// g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -fsyntax-only LambdaCalcSharedPtr.cpp
+// g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 LambdaCalcSharedPtr.cpp -o /tmp/lcpp-sp
+//
+// Then calc N9^N9 - /tmp/lcpp-sp n9
 
 #include <iostream>
 #include <cstdlib>
