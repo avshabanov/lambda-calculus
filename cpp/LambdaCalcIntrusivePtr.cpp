@@ -1,16 +1,37 @@
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -fsyntax-only LambdaCalcIntrusivePtr.cpp
+// g++ -DENABLE_MEM_STATS -Wall -Werror -Wimplicit -pedantic -std=c++11 -fsyntax-only LambdaCalcIntrusivePtr.cpp
+// g++ -DENABLE_BOOST_POOL -Wall -Werror -Wimplicit -pedantic -std=c++11 -fsyntax-only LambdaCalcIntrusivePtr.cpp
+//
+// Default mode (standard new, no statistics)
 // g++ -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 LambdaCalcIntrusivePtr.cpp -o /tmp/lcpp-intp
+//
+// Malloc, with statistics
+// g++ -DENABLE_MEM_STATS -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 LambdaCalcIntrusivePtr.cpp -o /tmp/lcpp-intp
+//
+// With boost pool (and automatic statistics):
+// g++ -DENABLE_BOOST_POOL -Wall -Werror -Wimplicit -pedantic -std=c++11 -O3 -lboost_system LambdaCalcIntrusivePtr.cpp -o /tmp/lcpp-intp
+//
 //
 // Then calc N9^N9 - /tmp/lcpp-intp n9
 
 #include <iostream>
-#include <cstdlib>
-#include <cassert>
 #include <vector>
 #include <exception>
 
 #include <boost/intrusive_ptr.hpp>
+
+#if defined(ENABLE_BOOST_POOL) || defined(ENABLE_MEM_STATS)
+#include <cassert> // for asserts in new overrides
+#endif
+
+#if defined(ENABLE_BOOST_POOL)
 #include <boost/pool/pool.hpp>
+#include <boost/pool/pool_alloc.hpp>
+#endif
+
+#if defined(ENABLE_MEM_STATS)
+#include <cstdlib> // for malloc/free in new/delete overrides
+#endif
 
 /* perf measurement */
 #include <sys/time.h>
@@ -23,10 +44,12 @@ using std::logic_error;
 
 using boost::intrusive_ptr;
 
-
 //
 // Memory helpers
 //
+
+// define memory statistics if boost pool or mem stats macros are defined
+#if defined(ENABLE_BOOST_POOL) || defined(ENABLE_MEM_STATS)
 
 struct AllocFree {
   int alloc = 0;
@@ -57,6 +80,32 @@ static void printMemUsageStats() {
       << endl;
 }
 
+#else
+
+// no mem stats - do not report about mem use
+static void printMemUsageStats() {
+}
+
+#endif // defined(ENABLE_BOOST_POOL) || defined(ENABLE_MEM_STATS)
+
+// define memory allocators
+#if defined(ENABLE_BOOST_POOL)
+
+// boost pool-based new/delete overrides
+// TODO: release functionality
+//#define OVERRIDE_NEW_AND_DELETE_FOR_CLASS(AtomClass) \
+//  static boost::fast_pool_allocator<AtomClass> g_static_pool; \
+//  static void* operator new (size_t size) { \
+//    assert(sizeof(AtomClass) == size); \
+//    return g_static_pool.allocate(size); \
+//  } \
+//  \
+//  static void operator delete (void *p) { \
+//    g_static_pool.deallocate(p, sizeof(AtomClass)); \
+//    ++gAllocStats.af_ ## AtomClass.free; \
+//  }
+
+// TODO: implement - now uses the same impl as in mem stats
 #define OVERRIDE_NEW_AND_DELETE_FOR_CLASS(AtomClass) \
   static void* operator new (size_t size) { \
     assert(sizeof(AtomClass) == size); \
@@ -72,6 +121,33 @@ static void printMemUsageStats() {
     free(p); \
     ++gAllocStats.af_ ## AtomClass.free; \
   }
+
+#elif defined(ENABLE_MEM_STATS)
+
+// malloc/free based new/delete overrides
+#define OVERRIDE_NEW_AND_DELETE_FOR_CLASS(AtomClass) \
+  static void* operator new (size_t size) { \
+    assert(sizeof(AtomClass) == size); \
+    void* p = malloc(size); \
+    if (p == NULL) { \
+      throw new std::bad_alloc(); \
+    } \
+    ++gAllocStats.af_ ## AtomClass.alloc; \
+    return p; \
+  } \
+  \
+  static void operator delete (void *p) { \
+    free(p); \
+    ++gAllocStats.af_ ## AtomClass.free; \
+  }
+
+#else
+
+// no new/delete overrides
+#define OVERRIDE_NEW_AND_DELETE_FOR_CLASS(AtomClass)
+
+#endif // ENABLE_MEM_STATS
+
 
 //
 // types
