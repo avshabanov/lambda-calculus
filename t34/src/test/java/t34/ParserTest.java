@@ -39,17 +39,6 @@ public class ParserTest {
     assertEquals(SimpleToken.CLOSE_BRACE, parser.next());
   }
 
-  @Test
-  public void shouldReadGlobalSymbol() {
-    final Parser parser = createParser("a");
-    final GlobalLexicalScope globalScope = new GlobalLexicalScope();
-    final AstNode node = parser.read(globalScope);
-    assertTrue(node instanceof AstNode.Sym);
-    final AstNode.Sym sym = (AstNode.Sym) node;
-    assertEquals(SimpleLocation.GLOBAL, sym.location);
-    assertEquals("a", sym.text);
-  }
-
   //
   // Private
   //

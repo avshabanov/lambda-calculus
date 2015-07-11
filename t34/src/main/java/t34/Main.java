@@ -296,21 +296,17 @@ final class ParserException extends RuntimeException {
   public ParserException(String message) { super(message); }
 }
 
-final class Parser {
-  final char[] buffer;
-  int start;
-  int end;
+final class AstNodeReader {
+  final Parser parser;
 
-  public Parser(char[] buffer, int start, int end) {
-    this.buffer = buffer;
-    this.start = start;
-    this.end = end;
+  public AstNodeReader(Parser parser) {
+    this.parser = parser;
   }
-
+  
   AstNode read(LexicalScope scope) {
-    Token token = next();
+    Token token = parser.next();
     if (token == SimpleToken.OPEN_BRACE) {
-      token = next();
+      token = parser.next();
       if (token == SimpleToken.LAMBDA) {
         return readLambdaDefinition(scope);
       }
@@ -324,14 +320,14 @@ final class Parser {
   }
 
   private AstNode.Lambda readLambdaDefinition(LexicalScope parentScope) {
-    expect(SimpleToken.OPEN_BRACE); // start arg list
-    Token token = next();
+    parser.expect(SimpleToken.OPEN_BRACE); // start arg list
+    Token token = parser.next();
     if (!token.isSymbol()) { throw new ParserException("arg is not a symbol"); }
     final String varName = token.getText();
-    expect(SimpleToken.CLOSE_BRACE); // end arg list
+    parser.expect(SimpleToken.CLOSE_BRACE); // end arg list
     final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
-    final AstNode body = readLambdaBody(scope, next());
-    expect(SimpleToken.CLOSE_BRACE); // end lambda
+    final AstNode body = readLambdaBody(scope, parser.next());
+    parser.expect(SimpleToken.CLOSE_BRACE); // end lambda
     return new AstNode.Lambda(scope, body, Int.valueOf(0));
   }
 
@@ -348,20 +344,30 @@ final class Parser {
       throw new RuntimeException("open brace expected");
     }
 
-    token = next();
-    final AstNode lhs;
+    token = parser.next();
     if (token == SimpleToken.LAMBDA) {
-      lhs = readLambdaDefinition(scope); // special handling for inner lambdas
-    } else {
-      lhs = readLambdaBody(scope, token);
+      return readLambdaDefinition(scope); // special handling for inner lambdas
     }
 
-    final AstNode rhs = readLambdaBody(scope, next());
-    expect(SimpleToken.CLOSE_BRACE);
+    final AstNode lhs = readLambdaBody(scope, token);
+    final AstNode rhs = readLambdaBody(scope, parser.next());
+    parser.expect(SimpleToken.CLOSE_BRACE);
     return new AstNode.Call(lhs, rhs);
   }
+}
 
-  Token next() {
+final class Parser {
+  final char[] buffer;
+  int start;
+  int end;
+
+  public Parser(char[] buffer, int start, int end) {
+    this.buffer = buffer;
+    this.start = start;
+    this.end = end;
+  }
+
+  public Token next() {
     // skip whitespace
     for (; start < end; ++start) {
       char ch = buffer[start];
@@ -402,7 +408,7 @@ final class Parser {
     return new Symbol(val);
   }
 
-  private void expect(Token token) {
+  public void expect(Token token) {
     if (next() != token) { throw new ParserException("token expected: " + token.getText()); }
   }
 }
