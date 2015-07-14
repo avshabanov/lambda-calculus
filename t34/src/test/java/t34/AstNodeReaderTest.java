@@ -52,6 +52,18 @@ public class AstNodeReaderTest {
     assertEquals("(lambda (a:CLOSURE[0]) (lambda (b:CLOSURE[1]) (b:VAR a:CLOSURE[0])))", nodeStr);
   }
 
+  @Test
+  public void shouldReadDefine() {
+    // Given:
+    final AstNodeReader reader = createReader("(define id (lambda (x) x))");
+
+    // When:
+    final AstNode node = reader.read(globalScope);
+
+    // Then:
+    assertTrue(node instanceof AstNode.Define);
+  }
+
   //
   // Private
   //

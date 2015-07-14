@@ -5,8 +5,7 @@ import net.sf.cglib.asm.MethodVisitor;
 import net.sf.cglib.asm.Opcodes;
 import net.sf.cglib.core.ReflectUtils;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public final class Main {
 
@@ -244,6 +243,14 @@ enum SimpleToken implements Token {
   OPEN_BRACE("("),
   CLOSE_BRACE(")");
 
+  public static final Map<String, SimpleToken> TOKEN_MAP;
+
+  static {
+    final Map<String, SimpleToken> map = new HashMap<>(values().length * 2);
+    for (final SimpleToken token : values()) { map.put(token.getText(), token); }
+    TOKEN_MAP = Collections.unmodifiableMap(map);
+  }
+
   final String text;
   SimpleToken(String text) { this.text = text; }
   public String getText() { return text; }
@@ -290,70 +297,20 @@ abstract class AstNode {
       this.atom = atom;
     }
   }
+
+  static final class Define extends AstNode {
+    final Sym sym;
+    final Lambda value;
+
+    public Define(Sym sym, Lambda value) {
+      this.sym = sym;
+      this.value = value;
+    }
+  }
 }
 
 final class ParserException extends RuntimeException {
   public ParserException(String message) { super(message); }
-}
-
-final class AstNodeReader {
-  final Parser parser;
-
-  public AstNodeReader(Parser parser) {
-    this.parser = parser;
-  }
-  
-  AstNode read(LexicalScope scope) {
-    Token token = parser.next();
-    if (token == SimpleToken.OPEN_BRACE) {
-      token = parser.next();
-      if (token == SimpleToken.LAMBDA) {
-        return readLambdaDefinition(scope);
-      }
-      if (token == SimpleToken.DEFINE) {
-        throw new UnsupportedOperationException(); // TODO: implement
-      }
-      // this is a function call
-    }
-
-    return readLambdaBody(scope, token);
-  }
-
-  private AstNode.Lambda readLambdaDefinition(LexicalScope parentScope) {
-    parser.expect(SimpleToken.OPEN_BRACE); // start arg list
-    Token token = parser.next();
-    if (!token.isSymbol()) { throw new ParserException("arg is not a symbol"); }
-    final String varName = token.getText();
-    parser.expect(SimpleToken.CLOSE_BRACE); // end arg list
-    final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
-    final AstNode body = readLambdaBody(scope, parser.next());
-    parser.expect(SimpleToken.CLOSE_BRACE); // end lambda
-    return new AstNode.Lambda(scope, body, Int.valueOf(0));
-  }
-
-  private AstNode readLambdaBody(LexicalScope scope, Token token) {
-    // is it a symbol?
-    if (token.isSymbol()) {
-      final Location location = scope.lookup(token.getText());
-      location.mark();
-      return new AstNode.Sym(token.getText(), location);
-    }
-
-    // not an open brace? - error
-    if (token != SimpleToken.OPEN_BRACE) {
-      throw new RuntimeException("open brace expected");
-    }
-
-    token = parser.next();
-    if (token == SimpleToken.LAMBDA) {
-      return readLambdaDefinition(scope); // special handling for inner lambdas
-    }
-
-    final AstNode lhs = readLambdaBody(scope, token);
-    final AstNode rhs = readLambdaBody(scope, parser.next());
-    parser.expect(SimpleToken.CLOSE_BRACE);
-    return new AstNode.Call(lhs, rhs);
-  }
 }
 
 final class Parser {
@@ -393,22 +350,90 @@ final class Parser {
       if (ch < 'a' || ch > 'z') { break; }
     }
 
-    if (tokenStart == start) {
-      throw new ParserException("unexpected end of input or illegal character");
-    }
-
-    final String val = new String(buffer, tokenStart, start - tokenStart);
-    assert val.matches("[a-z]+") : "String should contain only letters";
-    for (final SimpleToken simpleToken : SimpleToken.values()) {
-      if (simpleToken.getText().equals(val)) {
-        return simpleToken;
-      }
-    }
-
-    return new Symbol(val);
+    if (tokenStart == start) { throw new ParserException("unexpected end of input or illegal character"); }
+    return toToken(new String(buffer, tokenStart, start - tokenStart));
   }
 
   public void expect(Token token) {
     if (next() != token) { throw new ParserException("token expected: " + token.getText()); }
   }
+
+  public String expectSym() {
+    final Token token = next();
+    if (token.isSymbol()) { return token.getText(); }
+    throw new ParserException("Expected symbol, got " + token);
+  }
+
+  private Token toToken(String val) {
+    final Token token = SimpleToken.TOKEN_MAP.get(val);
+    return token == null ? new Symbol(val) : token;
+  }
 }
+
+final class AstNodeReader {
+  final Parser parser;
+
+  public AstNodeReader(Parser parser) {
+    this.parser = parser;
+  }
+  
+  public AstNode read(LexicalScope scope) {
+    Token token = parser.next();
+    if (token == SimpleToken.OPEN_BRACE) {
+      token = parser.next();
+      if (token == SimpleToken.LAMBDA) {
+        return readLambdaDefinition(scope);
+      }
+      if (token == SimpleToken.DEFINE) {
+        return readDefine(scope);
+      }
+      // this is a function call
+    }
+
+    return readLambdaBody(scope, token);
+  }
+
+  private AstNode.Define readDefine(LexicalScope scope) {
+    final AstNode.Sym sym = new AstNode.Sym(parser.expectSym(), SimpleLocation.GLOBAL);
+    parser.expect(SimpleToken.OPEN_BRACE);
+    parser.expect(SimpleToken.LAMBDA);
+    return new AstNode.Define(sym, readLambdaDefinition(scope));
+  }
+
+  private AstNode.Lambda readLambdaDefinition(LexicalScope parentScope) {
+    parser.expect(SimpleToken.OPEN_BRACE); // start arg list
+    Token token = parser.next();
+    if (!token.isSymbol()) { throw new ParserException("arg is not a symbol"); }
+    final String varName = token.getText();
+    parser.expect(SimpleToken.CLOSE_BRACE); // end arg list
+    final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
+    final AstNode body = readLambdaBody(scope, parser.next());
+    parser.expect(SimpleToken.CLOSE_BRACE); // end lambda
+    return new AstNode.Lambda(scope, body, Int.valueOf(0));
+  }
+
+  private AstNode readLambdaBody(LexicalScope scope, Token token) {
+    // is it a symbol?
+    if (token.isSymbol()) {
+      final Location location = scope.lookup(token.getText());
+      location.mark();
+      return new AstNode.Sym(token.getText(), location);
+    }
+
+    // not an open brace? - error
+    if (token != SimpleToken.OPEN_BRACE) {
+      throw new RuntimeException("open brace expected");
+    }
+
+    token = parser.next();
+    if (token == SimpleToken.LAMBDA) {
+      return readLambdaDefinition(scope); // special handling for inner lambdas
+    }
+
+    final AstNode lhs = readLambdaBody(scope, token);
+    final AstNode rhs = readLambdaBody(scope, parser.next());
+    parser.expect(SimpleToken.CLOSE_BRACE);
+    return new AstNode.Call(lhs, rhs);
+  }
+}
+
