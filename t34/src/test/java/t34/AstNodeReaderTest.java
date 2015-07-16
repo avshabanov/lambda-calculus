@@ -17,13 +17,26 @@ public class AstNodeReaderTest {
     final AstNodeReader reader = createReader("a");
 
     // When:
-    final AstNode node = reader.read(globalScope);
+    final PrimitiveAtom node = reader.read(globalScope);
 
     // Then:
-    assertTrue(node instanceof AstNode.Sym);
-    final AstNode.Sym sym = (AstNode.Sym) node;
+    assertTrue(node instanceof Symbol);
+    final Symbol sym = (Symbol) node;
     assertEquals(SimpleLocation.GLOBAL, sym.location);
-    assertEquals("a", sym.text);
+    assertEquals("a", sym.toString());
+  }
+
+  @Test
+  public void shouldReadNumber() {
+    // Given:
+    final AstNodeReader reader = createReader("0");
+
+    // When:
+    final PrimitiveAtom node = reader.read(globalScope);
+
+    // Then:
+    assertTrue(node instanceof Int);
+    assertEquals(0, node.toInt());
   }
 
   @Test
@@ -32,7 +45,7 @@ public class AstNodeReaderTest {
     final AstNodeReader reader = createReader("(lambda (a) a)");
 
     // When:
-    final AstNode node = reader.read(globalScope);
+    final PrimitiveAtom node = reader.read(globalScope);
 
     // Then:
     final String nodeStr = toString(node);
@@ -45,11 +58,52 @@ public class AstNodeReaderTest {
     final AstNodeReader reader = createReader("(lambda (a) (lambda (b) (b a)))");
 
     // When:
-    final AstNode node = reader.read(globalScope);
+    final PrimitiveAtom node = reader.read(globalScope);
 
     // Then:
     final String nodeStr = toString(node);
     assertEquals("(lambda (a:CLOSURE[0]) (lambda (b:CLOSURE[1]) (b:VAR a:CLOSURE[0])))", nodeStr);
+  }
+
+  @Test
+  public void shouldReadNestedLambdas2() {
+    // Given:
+    final AstNodeReader reader = createReader("(lambda (a) (lambda (b) (b (lambda (c) (c (b a))))))");
+
+    // When:
+    final PrimitiveAtom node = reader.read(globalScope);
+
+    // Then:
+    final String nodeStr = toString(node);
+    assertEquals("(lambda (a:CLOSURE[0]) " +
+            "(lambda (b:CLOSURE[1]) (b:VAR (lambda (c:CLOSURE[2]) (c:VAR (b:CLOSURE[1] a:CLOSURE[0]))))))",
+        nodeStr);
+  }
+
+  @Test
+  public void shouldReadCall() {
+    // Given:
+    final AstNodeReader reader = createReader("(a b)");
+
+    // When:
+    final PrimitiveAtom node = reader.read(globalScope);
+
+    // Then:
+    final String nodeStr = toString(node);
+    assertEquals("(a:GLOBAL b:GLOBAL)", nodeStr);
+  }
+
+  @Test
+  public void shouldReadNestedCall() {
+    // Given:
+    final AstNodeReader reader = createReader("(((a b) c) d)");
+
+    // When:
+    final PrimitiveAtom node = reader.read(globalScope);
+
+    // Then:
+    final String nodeStr = toString(node);
+    assertEquals("(((a:GLOBAL b:GLOBAL) c:GLOBAL) d:GLOBAL)", nodeStr);
   }
 
   @Test
@@ -58,27 +112,27 @@ public class AstNodeReaderTest {
     final AstNodeReader reader = createReader("(define id (lambda (x) x))");
 
     // When:
-    final AstNode node = reader.read(globalScope);
+    final PrimitiveAtom node = reader.read(globalScope);
 
     // Then:
-    assertTrue(node instanceof AstNode.Define);
+    assertTrue(node instanceof Define);
   }
 
   //
   // Private
   //
 
-  private AstNodeReader createReader(String input) {
-    return new AstNodeReader(new Parser(input.toCharArray(), 0, input.length()));
+  public static AstNodeReader createReader(String input) {
+    return new AstNodeReader(new Parser().init(input.toCharArray(), 0, input.length()));
   }
 
-  private static String toString(AstNode node) {
+  private static String toString(PrimitiveAtom node) {
     final StringBuilder builder = new StringBuilder(100);
     append(builder, node);
     return builder.toString();
   }
 
-  private static void append(StringBuilder builder, AstNode.Lambda lambda) {
+  private static void append(StringBuilder builder, Lambda lambda) {
     builder.append('(').append("lambda").append(' ')
         .append('(').append(lambda.scope.getLocalVarName());
     append(builder, lambda.scope.getLocalClosureLocation());
@@ -89,21 +143,21 @@ public class AstNodeReaderTest {
     builder.append(')');
   }
 
-  private static void append(StringBuilder builder, AstNode node) {
-    if (node instanceof AstNode.Sym) {
-      final AstNode.Sym sym = (AstNode.Sym) node;
-      builder.append(sym.text);
+  private static void append(StringBuilder builder, PrimitiveAtom node) {
+    if (node instanceof Symbol) {
+      final Symbol sym = (Symbol) node;
+      builder.append(sym.toString());
       append(builder, sym.location);
       return;
     }
 
-    if (node instanceof AstNode.Lambda) {
-      append(builder, (AstNode.Lambda) node);
+    if (node instanceof Lambda) {
+      append(builder, (Lambda) node);
       return;
     }
 
-    if (node instanceof AstNode.Call) {
-      final AstNode.Call call = (AstNode.Call) node;
+    if (node instanceof Call) {
+      final Call call = (Call) node;
       builder.append('(');
       append(builder, call.lhs);
       builder.append(' ');

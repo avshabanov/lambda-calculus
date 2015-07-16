@@ -5,32 +5,60 @@ import net.sf.cglib.asm.MethodVisitor;
 import net.sf.cglib.asm.Opcodes;
 import net.sf.cglib.core.ReflectUtils;
 
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.CharBuffer;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class Main {
 
   public static abstract class Atom {
-    public Atom fn(Atom arg) { throw new UnsupportedOperationException(); }
-    public int toInt() { throw new UnsupportedOperationException(); }
+    public abstract Atom fn(Atom arg);
+    public abstract int toInt();
   }
 
-  public static void main(String[] args) throws Exception {
-    final AtomGenerator gen = new AtomGenerator(Main.class.getClassLoader());
-    Atom val;
+  public static abstract class Fn extends Atom {
+    public int toInt() { throw new UnsupportedOperationException("Treating Fn as Int"); }
+  }
 
-    final Atom ga0 = (Atom) gen.generate(0).newInstance();
-    val = ga0.fn(Int.valueOf(0));
-    System.out.println("[0] val=" + val);
+  // initial environment
+  public static class Env {
+    private static final Inc INC = new Inc();
+    @SuppressWarnings("unused") public Atom get_inc() { return INC; }
+  }
 
-    final Atom ga1 = (Atom) gen.generate(1).getConstructor(Atom.class).newInstance(new Inc());
-    val = ga1.fn(Int.valueOf(0));
-    System.out.println("[1] val=" + val);
+  public static void main(String[] args) throws IOException {
+    System.out.println(";; Simple Lambda Calc Interpreter");
+    try (final BufferedReader r = new BufferedReader(new InputStreamReader(System.in))) {
+      startRepl(r);
+    }
+    System.out.println(";; Goodbye!");
+  }
 
-    final Atom ga2 = (Atom) gen.generate(2)
-        .getConstructor(Atom.class, Atom.class)
-        .newInstance(new Inc(), new Inc());
-    val = ga2.fn(Int.valueOf(0));
-    System.out.println("[2] val=" + val);
+  private static void startRepl(BufferedReader r) throws IOException {
+    final Parser parser = new Parser();
+    final AstNodeReader reader = new AstNodeReader(parser);
+    final EnvHolder envHolder = new EnvHolder();
+    final Evaluator evaluator = new Evaluator(envHolder);
+
+    for (;;) {
+      System.out.print("> ");
+      final String line = r.readLine();
+      if ("(quit)".equals(line)) { return; }
+      parser.init(line.toCharArray(), 0, line.length());
+      try {
+        System.out.println(evaluator.eval(reader.read(envHolder.scope)));
+      } catch (RuntimeException e) {
+        System.err.println(";; Error");
+        e.printStackTrace(System.err);
+      }
+    }
   }
 }
 
@@ -38,7 +66,12 @@ public final class Main {
 // Builtins
 //
 
-final class Int extends Main.Atom {
+abstract class PrimitiveAtom extends Main.Atom {
+  public Main.Atom fn(Main.Atom arg) { throw new UnsupportedOperationException("Treating " + getClass() + " as Fn"); }
+  public int toInt() { throw new UnsupportedOperationException("Treating " + getClass() + " as Int"); }
+}
+
+final class Int extends PrimitiveAtom {
   private final static int CACHE_SIZE = 256;
   private final static Int[] CACHE = new Int[CACHE_SIZE];
   static {
@@ -58,22 +91,86 @@ final class Int extends Main.Atom {
     return new Int(value);
   }
 
-  @Override
   public int toInt() { return value; }
-
-  @Override
   public String toString() { return Integer.toString(value); }
 }
 
-final class Inc extends Main.Atom {
-  @Override
-  public Main.Atom fn(Main.Atom arg) {
-    return Int.valueOf(arg.toInt() + 1);
+final class Inc extends Main.Fn {
+  public Main.Atom fn(Main.Atom arg) { return Int.valueOf(arg.toInt() + 1); }
+  public String toString() { return "<lambda#inc>"; }
+}
+
+abstract class TextAtom extends PrimitiveAtom {
+  private final String text;
+  public TextAtom(String text) { this.text = text; }
+  public String toString() { return text; }
+}
+
+final class Special extends TextAtom {
+  public static final Special LAMBDA = new Special("lambda");
+  public static final Special DEFINE = new Special("define");
+  public static final Special OPEN_BRACE = new Special("(");
+  public static final Special CLOSE_BRACE = new Special(")");
+
+  public static final Map<String, Special> TOKEN_MAP;
+
+  static {
+    final Map<String, Special> map = new HashMap<>(10);
+    map.put("lambda", LAMBDA);
+    map.put("define", DEFINE);
+    map.put("(", OPEN_BRACE);
+    map.put(")", CLOSE_BRACE);
+    TOKEN_MAP = Collections.unmodifiableMap(map);
   }
 
-  @Override
-  public String toString() { return "inc"; }
+  public Special(String text) { super(text); }
 }
+
+final class Symbol extends TextAtom {
+  public final Location location;
+
+  public Symbol(String text, Location location) {
+    super(text);
+    this.location = location;
+  }
+}
+
+final class Call extends PrimitiveAtom {
+  public final PrimitiveAtom lhs;
+  public final PrimitiveAtom rhs;
+
+  public Call(PrimitiveAtom lhs, PrimitiveAtom rhs) {
+    this.lhs = lhs;
+    this.rhs = rhs;
+  }
+
+  public String toString() { return "<call>"; }
+}
+
+final class Lambda extends PrimitiveAtom {
+  final LexicalScope scope;
+  final PrimitiveAtom body;
+  final Main.Atom fnAtom;
+
+  public Lambda(LexicalScope scope, PrimitiveAtom body, Main.Atom fnAtom) {
+    this.scope = scope;
+    this.body = body;
+    this.fnAtom = fnAtom;
+  }
+
+  public String toString() { return "<lambda>"; }
+}
+
+final class Define extends PrimitiveAtom {
+  public final Symbol sym;
+  public final Lambda value;
+
+  public Define(Symbol sym, Lambda value) {
+    this.sym = sym;
+    this.value = value;
+  }
+}
+
 
 //
 // Code Generator
@@ -90,13 +187,13 @@ final class AtomGenerator implements Opcodes {
   public Class<?> generate(int numberOfFields) {
     ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
     MethodVisitor mv;
-    final String className = "GenAtom" + (++index);
+    final String className = "GenFn" + (++index);
 
     cw.visit(49,
         ACC_PUBLIC + ACC_SUPER,
         className,
         null,
-        "t34/Main$Atom",
+        "t34/Main$Fn",
         null);
 
     cw.visitSource(className + ".java", null);
@@ -114,7 +211,7 @@ final class AtomGenerator implements Opcodes {
       signature.append(")V");
       mv = cw.visitMethod(ACC_PUBLIC, "<init>", signature.toString(), null, null);
       mv.visitVarInsn(ALOAD, 0);
-      mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Atom", "<init>", "()V");
+      mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Fn", "<init>", "()V");
       for (int i = 0; i < numberOfFields; ++i) {
         mv.visitVarInsn(ALOAD, 0);
         mv.visitVarInsn(ALOAD, i + 1);
@@ -232,99 +329,27 @@ final class LambdaLexicalScope implements LexicalScope {
   }
 }
 
-interface Token {
-  String getText();
-  boolean isSymbol();
-}
-
-enum SimpleToken implements Token {
-  DEFINE("define"),
-  LAMBDA("lambda"),
-  OPEN_BRACE("("),
-  CLOSE_BRACE(")");
-
-  public static final Map<String, SimpleToken> TOKEN_MAP;
-
-  static {
-    final Map<String, SimpleToken> map = new HashMap<>(values().length * 2);
-    for (final SimpleToken token : values()) { map.put(token.getText(), token); }
-    TOKEN_MAP = Collections.unmodifiableMap(map);
-  }
-
-  final String text;
-  SimpleToken(String text) { this.text = text; }
-  public String getText() { return text; }
-  public boolean isSymbol() { return false; }
-}
-
-final class Symbol implements Token {
-  final String text;
-
-  public Symbol(String text) { this.text = text; }
-  public String getText() { return text; }
-  public boolean isSymbol() { return true; }
-}
-
-abstract class AstNode {
-  static final class Sym extends AstNode {
-    final String text;
-    final Location location;
-
-    Sym(String text, Location location) {
-      this.text = text;
-      this.location = location;
-    }
-  }
-
-  static final class Call extends AstNode {
-    final AstNode lhs;
-    final AstNode rhs;
-
-    Call(AstNode lhs, AstNode rhs) {
-      this.lhs = lhs;
-      this.rhs = rhs;
-    }
-  }
-
-  static final class Lambda extends AstNode {
-    final LexicalScope scope;
-    final AstNode body;
-    final Main.Atom atom;
-
-    public Lambda(LexicalScope scope, AstNode body, final Main.Atom atom) {
-      this.scope = scope;
-      this.body = body;
-      this.atom = atom;
-    }
-  }
-
-  static final class Define extends AstNode {
-    final Sym sym;
-    final Lambda value;
-
-    public Define(Sym sym, Lambda value) {
-      this.sym = sym;
-      this.value = value;
-    }
-  }
-}
-
 final class ParserException extends RuntimeException {
   public ParserException(String message) { super(message); }
 }
 
 final class Parser {
-  final char[] buffer;
+  char[] buffer;
   int start;
   int end;
 
-  public Parser(char[] buffer, int start, int end) {
+  public Parser init(char[] buffer, int start, int end) {
     this.buffer = buffer;
     this.start = start;
     this.end = end;
+    return this;
   }
 
-  public Token next() {
+  public Parser() {
+    init(null, 0, 0);
+  }
+
+  public PrimitiveAtom next(LexicalScope scope) {
     // skip whitespace
     for (; start < end; ++start) {
       char ch = buffer[start];
@@ -333,6 +358,7 @@ final class Parser {
       }
     }
 
+    boolean isInt = false;
     int tokenStart = start;
     for (; start < end; ++start) {
       char ch = buffer[start];
@@ -340,100 +366,121 @@ final class Parser {
         switch (ch) { // special character?
           case '(':
             ++start;
-            return SimpleToken.OPEN_BRACE;
+            return Special.OPEN_BRACE;
           case ')':
             ++start;
-            return SimpleToken.CLOSE_BRACE;
+            return Special.CLOSE_BRACE;
         }
+
+        if (ch >= '0' && ch <= '9') {
+          isInt = true;
+          continue;
+        }
+      }
+
+      if (isInt) {
+        if (ch >= '0' && ch <= '9') { continue; }
+        break;
       }
 
       if (ch < 'a' || ch > 'z') { break; }
     }
 
     if (tokenStart == start) { throw new ParserException("unexpected end of input or illegal character"); }
-    return toToken(new String(buffer, tokenStart, start - tokenStart));
+    return toToken(isInt, new String(buffer, tokenStart, start - tokenStart), scope);
   }
 
-  public void expect(Token token) {
-    if (next() != token) { throw new ParserException("token expected: " + token.getText()); }
+  public void expect(Special token, LexicalScope scope) {
+    if (next(scope) != token) { throw new ParserException("token expected: " + token.toString()); }
   }
 
-  public String expectSym() {
-    final Token token = next();
-    if (token.isSymbol()) { return token.getText(); }
-    throw new ParserException("Expected symbol, got " + token);
-  }
+  private PrimitiveAtom toToken(boolean isInt, String val, LexicalScope scope) {
+    if (isInt) { return Int.valueOf(Integer.parseInt(val)); }
+    final Special special = Special.TOKEN_MAP.get(val);
+    if (special != null) { return special; }
 
-  private Token toToken(String val) {
-    final Token token = SimpleToken.TOKEN_MAP.get(val);
-    return token == null ? new Symbol(val) : token;
+    final Location location = scope.lookup(val);
+    location.mark();
+    return new Symbol(val, location);
   }
 }
 
 final class AstNodeReader {
-  final Parser parser;
+  private final Parser parser;
+  public AstNodeReader(Parser parser) { this.parser = parser; }
 
-  public AstNodeReader(Parser parser) {
-    this.parser = parser;
-  }
-  
-  public AstNode read(LexicalScope scope) {
-    Token token = parser.next();
-    if (token == SimpleToken.OPEN_BRACE) {
-      token = parser.next();
-      if (token == SimpleToken.LAMBDA) {
-        return readLambdaDefinition(scope);
-      }
-      if (token == SimpleToken.DEFINE) {
-        return readDefine(scope);
-      }
-      // this is a function call
-    }
-
-    return readLambdaBody(scope, token);
+  public PrimitiveAtom read(LexicalScope scope) {
+    return readToken(scope, parser.next(scope));
   }
 
-  private AstNode.Define readDefine(LexicalScope scope) {
-    final AstNode.Sym sym = new AstNode.Sym(parser.expectSym(), SimpleLocation.GLOBAL);
-    parser.expect(SimpleToken.OPEN_BRACE);
-    parser.expect(SimpleToken.LAMBDA);
-    return new AstNode.Define(sym, readLambdaDefinition(scope));
-  }
-
-  private AstNode.Lambda readLambdaDefinition(LexicalScope parentScope) {
-    parser.expect(SimpleToken.OPEN_BRACE); // start arg list
-    Token token = parser.next();
-    if (!token.isSymbol()) { throw new ParserException("arg is not a symbol"); }
-    final String varName = token.getText();
-    parser.expect(SimpleToken.CLOSE_BRACE); // end arg list
-    final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
-    final AstNode body = readLambdaBody(scope, parser.next());
-    parser.expect(SimpleToken.CLOSE_BRACE); // end lambda
-    return new AstNode.Lambda(scope, body, Int.valueOf(0));
-  }
-
-  private AstNode readLambdaBody(LexicalScope scope, Token token) {
-    // is it a symbol?
-    if (token.isSymbol()) {
-      final Location location = scope.lookup(token.getText());
-      location.mark();
-      return new AstNode.Sym(token.getText(), location);
+  private PrimitiveAtom readToken(LexicalScope scope, PrimitiveAtom token) {
+    // is it a symbol or int?
+    if (token instanceof Symbol || token instanceof Int) {
+      return token;
     }
 
     // not an open brace? - error
-    if (token != SimpleToken.OPEN_BRACE) {
+    if (token != Special.OPEN_BRACE) {
       throw new RuntimeException("open brace expected");
     }
 
-    token = parser.next();
-    if (token == SimpleToken.LAMBDA) {
-      return readLambdaDefinition(scope); // special handling for inner lambdas
-    }
+    token = parser.next(scope);
+    if (token == Special.LAMBDA) { return readLambdaDefinition(scope); }
+    if (token == Special.DEFINE) { return readDefine(scope); }
 
-    final AstNode lhs = readLambdaBody(scope, token);
-    final AstNode rhs = readLambdaBody(scope, parser.next());
-    parser.expect(SimpleToken.CLOSE_BRACE);
-    return new AstNode.Call(lhs, rhs);
+    final PrimitiveAtom lhs = readToken(scope, token);
+    final PrimitiveAtom rhs = readToken(scope, parser.next(scope));
+    parser.expect(Special.CLOSE_BRACE, scope);
+    return new Call(lhs, rhs);
+  }
+
+  private Define readDefine(LexicalScope scope) {
+    final Symbol sym = (Symbol) parser.next(scope); // TODO: check and report if not a symbol
+    parser.expect(Special.OPEN_BRACE, scope);
+    parser.expect(Special.LAMBDA, scope);
+    return new Define(sym, readLambdaDefinition(scope));
+  }
+
+  private Lambda readLambdaDefinition(LexicalScope parentScope) {
+    parser.expect(Special.OPEN_BRACE, parentScope); // start arg list
+    PrimitiveAtom token = parser.next(parentScope);
+    if (!(token instanceof Symbol)) { throw new ParserException("arg is not a symbol"); }
+    final String varName = token.toString();
+    parser.expect(Special.CLOSE_BRACE, parentScope); // end arg list
+    final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
+    final PrimitiveAtom body = readToken(scope, parser.next(scope));
+    parser.expect(Special.CLOSE_BRACE, parentScope); // end lambda
+    return new Lambda(scope, body, Int.valueOf(0));
   }
 }
 
+final class EnvHolder {
+  public Main.Env env = new Main.Env();
+  public final GlobalLexicalScope scope = new GlobalLexicalScope();
+}
+
+final class Evaluator implements Opcodes {
+  private final EnvHolder envHolder;
+
+  public Evaluator(EnvHolder envHolder) {
+    this.envHolder = envHolder;
+  }
+
+  Main.Atom eval(Main.Atom node) {
+    if (node instanceof Symbol) {
+      // get from env
+      try {
+        final Method m = envHolder.env.getClass().getMethod("get_" + node.toString());
+        return (Main.Atom) m.invoke(envHolder.env);
+      } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    if (node instanceof PrimitiveAtom) {
+      return node;
+    }
+
+    throw new UnsupportedOperationException();
+  }
+}

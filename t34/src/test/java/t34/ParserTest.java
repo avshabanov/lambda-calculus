@@ -6,37 +6,38 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class ParserTest {
+  private final GlobalLexicalScope scope = new GlobalLexicalScope();
 
   @Test
-  public void shouldParseSimpleTokens() {
-    assertEquals(SimpleToken.LAMBDA, createParser("lambda").next());
-    assertEquals(SimpleToken.DEFINE, createParser("define").next());
-    assertEquals(SimpleToken.OPEN_BRACE, createParser("(").next());
-    assertEquals(SimpleToken.CLOSE_BRACE, createParser(")").next());
+  public void shouldParseSpecials() {
+    assertEquals(Special.LAMBDA, createParser("lambda").next(scope));
+    assertEquals(Special.DEFINE, createParser("define").next(scope));
+    assertEquals(Special.OPEN_BRACE, createParser("(").next(scope));
+    assertEquals(Special.CLOSE_BRACE, createParser(")").next(scope));
   }
 
   @Test
   public void shouldTrimHeadingWhitespace() {
-    assertEquals(SimpleToken.LAMBDA, createParser(" \n  lambda ").next());
-    assertEquals(SimpleToken.DEFINE, createParser(" \ndefine  ").next());
-    assertEquals(SimpleToken.OPEN_BRACE, createParser(" (").next());
-    assertEquals(SimpleToken.CLOSE_BRACE, createParser("  ) ").next());
+    assertEquals(Special.LAMBDA, createParser(" \n  lambda ").next(scope));
+    assertEquals(Special.DEFINE, createParser(" \ndefine  ").next(scope));
+    assertEquals(Special.OPEN_BRACE, createParser(" (").next(scope));
+    assertEquals(Special.CLOSE_BRACE, createParser("  ) ").next(scope));
   }
 
   @Test
   public void shouldParseSequence() {
     final Parser parser = createParser("(lambda  (a ) bbb)");
-    assertEquals(SimpleToken.OPEN_BRACE, parser.next());
-    assertEquals(SimpleToken.LAMBDA, parser.next());
-    assertEquals(SimpleToken.OPEN_BRACE, parser.next());
-    Token token = parser.next();
-    assertTrue(token.isSymbol());
-    assertEquals("a", token.getText());
-    assertEquals(SimpleToken.CLOSE_BRACE, parser.next());
-    token = parser.next();
-    assertTrue(token.isSymbol());
-    assertEquals("bbb", token.getText());
-    assertEquals(SimpleToken.CLOSE_BRACE, parser.next());
+    assertEquals(Special.OPEN_BRACE, parser.next(scope));
+    assertEquals(Special.LAMBDA, parser.next(scope));
+    assertEquals(Special.OPEN_BRACE, parser.next(scope));
+    PrimitiveAtom token = parser.next(scope);
+    assertTrue(token instanceof Symbol);
+    assertEquals("a", token.toString());
+    assertEquals(Special.CLOSE_BRACE, parser.next(scope));
+    token = parser.next(scope);
+    assertTrue(token instanceof Symbol);
+    assertEquals("bbb", token.toString());
+    assertEquals(Special.CLOSE_BRACE, parser.next(scope));
   }
 
   //
@@ -44,6 +45,6 @@ public class ParserTest {
   //
 
   private Parser createParser(String input) {
-    return new Parser(input.toCharArray(), 0, input.length());
+    return new Parser().init(input.toCharArray(), 0, input.length());
   }
 }
