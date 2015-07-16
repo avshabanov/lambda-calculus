@@ -8,11 +8,10 @@ import net.sf.cglib.core.ReflectUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public final class Main {
 
@@ -27,8 +26,10 @@ public final class Main {
 
   // initial environment
   public static class Env {
-    private static final Inc _INC = new Inc();
-    @SuppressWarnings("unused") public Atom inc() { return _INC; }
+    private static final Atom INC = new Inc();
+    private static final Atom DEC = new Dec();
+    @SuppressWarnings("unused") public Atom inc() { return INC; }
+    @SuppressWarnings("unused") public Atom dec() { return DEC; }
   }
 
   public static void main(String[] args) throws IOException {
@@ -50,8 +51,12 @@ public final class Main {
       if ("(quit)".equals(line)) { return; }
       parser.init(line.toCharArray(), 0, line.length());
       try {
-        System.out.println(evaluator.eval(reader.read(evaluator.scope)));
-      } catch (RuntimeException e) {
+        final long start = System.nanoTime();
+        final Atom result = evaluator.eval(reader.read(evaluator.scope));
+        final long delta = System.nanoTime() - start;
+        System.out.println(result + "\n;; time=" + delta + " nanoseconds (~" +
+            TimeUnit.NANOSECONDS.toMillis(delta) + " msec, ~" + TimeUnit.NANOSECONDS.toSeconds(delta) + " sec)");
+      } catch (Exception e) {
         System.err.println(";; Error");
         e.printStackTrace(System.err);
       }
@@ -97,6 +102,11 @@ final class Int extends PrimitiveAtom {
 final class Inc extends Main.Fn {
   public Main.Atom fn(Main.Atom arg) { return Int.valueOf(arg.toInt() + 1); }
   public String toString() { return "<lambda#inc>"; }
+}
+
+final class Dec extends Main.Fn {
+  public Main.Atom fn(Main.Atom arg) { return Int.valueOf(arg.toInt() - 1); }
+  public String toString() { return "<lambda#dec>"; }
 }
 
 abstract class TextAtom extends PrimitiveAtom {
@@ -149,12 +159,10 @@ final class Call extends PrimitiveAtom {
 final class Lambda extends PrimitiveAtom {
   final LexicalScope scope;
   final PrimitiveAtom body;
-  final Main.Atom fnAtom;
 
-  public Lambda(LexicalScope scope, PrimitiveAtom body, Main.Atom fnAtom) {
+  public Lambda(LexicalScope scope, PrimitiveAtom body) {
     this.scope = scope;
     this.body = body;
-    this.fnAtom = fnAtom;
   }
 
   public String toString() { return "<lambda>"; }
@@ -361,26 +369,22 @@ final class AstNodeReader {
     final LexicalScope scope = new LambdaLexicalScope(parentScope, varName);
     final PrimitiveAtom body = readToken(scope, parser.next(scope));
     parser.expect(Special.CLOSE_BRACE, parentScope); // end lambda
-    return new Lambda(scope, body, Int.valueOf(0));
+    return new Lambda(scope, body);
   }
 }
 
 final class Evaluator implements Opcodes {
   private Main.Env env = new Main.Env();
-  private int genFnIndex = 0;
+  private static int FN_INDEX = 0;
+  private static int ENV_INDEX = 0;
+  private String prevEnvClassName = "t34/Main$Env";
   private final ClassLoader loader = getClass().getClassLoader();
 
   public final GlobalLexicalScope scope = new GlobalLexicalScope();
 
-  public Main.Atom eval(Main.Atom node) {
+  public Main.Atom eval(Main.Atom node) throws Exception {
     if (node instanceof Symbol) {
-      // get from env
-      try {
-        final Method m = env.getClass().getMethod(node.toString());
-        return (Main.Atom) m.invoke(env);
-      } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
-        throw new RuntimeException(e);
-      }
+      return (Main.Atom) env.getClass().getMethod(node.toString()).invoke(env);
     }
 
     if (node instanceof Call) {
@@ -388,26 +392,61 @@ final class Evaluator implements Opcodes {
       return eval(call.lhs).fn(eval(call.rhs));
     }
 
+    if (node instanceof Define) { return evalDefine((Define) node); }
     if (node instanceof Lambda) { return evalLambda((Lambda) node); }
-
     if (node instanceof PrimitiveAtom || node instanceof Main.Fn) { return node; }
-
     throw new UnsupportedOperationException("Can't eval " + node);
   }
 
-  private Main.Fn evalLambda(Lambda lambda) {
-    assert lambda.scope.getLocalClosureLocation().getParameterIndex() == 0 : "Lambda to eval should be global";
-    try {
-      return (Main.Fn) genLambdaClass(lambda).newInstance();
-    } catch (InstantiationException | IllegalAccessException e) {
-      throw new RuntimeException(e);
-    }
+  private Main.Fn evalLambda(Lambda lambda) throws Exception { return (Main.Fn) genLambdaClass(lambda).newInstance(); }
+
+  private Int evalDefine(Define define) throws Exception {
+    final Main.Fn lambdaFn = evalLambda(define.value);
+    final Class<?> newEnvClass = genNewEnv(define.sym.toString());
+    newEnvClass.getDeclaredField("SYM").set(null, lambdaFn);
+    env = (Main.Env) newEnvClass.newInstance();
+    prevEnvClassName = newEnvClass.getName();
+    return Int.valueOf(0);
   }
 
-  private Class<?> genLambdaClass(Lambda lambda) {
+  private Class<?> genNewEnv(String sym) throws Exception {
     ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
     MethodVisitor mv;
-    final String className = "GenFn" + (++genFnIndex);
+    final String parentClassSgn = prevEnvClassName;
+    final String className = "Env" + (++ENV_INDEX);
+
+    cw.visit(49, ACC_PUBLIC + ACC_SUPER, className, null, parentClassSgn, null);
+    cw.visitSource(className + ".java", null);
+    cw.visitField(ACC_PUBLIC + ACC_STATIC, "SYM", "Lt34/Main$Atom;", null, null).visitEnd();
+
+    // ctor
+    {
+      mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+      mv.visitVarInsn(ALOAD, 0);
+      mv.visitMethodInsn(INVOKESPECIAL, parentClassSgn, "<init>", "()V");
+      mv.visitInsn(RETURN);
+      mv.visitMaxs(0, 0);
+      mv.visitEnd();
+    }
+
+    // fn - sym
+    {
+      mv = cw.visitMethod(ACC_PUBLIC, sym, "()Lt34/Main$Atom;", null, null);
+      mv.visitFieldInsn(GETSTATIC, className, "SYM", "Lt34/Main$Atom;");
+      mv.visitInsn(ARETURN);
+      mv.visitMaxs(0, 0);
+      mv.visitEnd();
+    }
+
+    cw.visitEnd();
+
+    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
+  }
+
+  private Class<?> genLambdaClass(Lambda lambda) throws Exception {
+    ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+    MethodVisitor mv;
+    final String className = "GenFn" + (++FN_INDEX);
 
     cw.visit(49, ACC_PUBLIC + ACC_SUPER, className, null, "t34/Main$Fn", null);
 
@@ -461,11 +500,6 @@ final class Evaluator implements Opcodes {
 
     cw.visitEnd();
 
-    try {
-      //noinspection unchecked
-      return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
+    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
   }
 }

@@ -18,7 +18,7 @@ public class EvaluatorTest {
   }
 
   @Test
-  public void shouldEvalInt() {
+  public void shouldEvalInt() throws Exception {
     // Given:
     final int value = 10;
 
@@ -31,7 +31,7 @@ public class EvaluatorTest {
   }
 
   @Test
-  public void shouldEvalInc() {
+  public void shouldEvalInc() throws Exception {
     // When:
     final Main.Atom a = evaluator.eval(lookupGlobal("inc"));
 
@@ -40,7 +40,7 @@ public class EvaluatorTest {
   }
 
   @Test
-  public void shouldEvalCall() {
+  public void shouldEvalCall() throws Exception {
     // Given:
     final PrimitiveAtom call = parse("(inc 0)");
 
@@ -52,7 +52,7 @@ public class EvaluatorTest {
   }
 
   @Test
-  public void shouldEvalNestedCall() {
+  public void shouldEvalNestedCall() throws Exception {
     // Given:
     final PrimitiveAtom call = parse("(inc (inc (inc 0)))");
 
@@ -64,7 +64,19 @@ public class EvaluatorTest {
   }
 
   @Test
-  public void shouldEvalSimpleLambdaExpr() {
+  public void shouldEvalMultipleFns() throws Exception {
+    // Given:
+    final PrimitiveAtom call = parse("(dec (inc 0))");
+
+    // When:
+    final Main.Atom a = evaluator.eval(call);
+
+    // Then:
+    assertEquals(0, a.toInt());
+  }
+
+  @Test
+  public void shouldEvalSimpleLambdaExpr() throws Exception {
     // Given:
     final PrimitiveAtom lambda = parse("(lambda (a) a)");
 
@@ -73,6 +85,19 @@ public class EvaluatorTest {
 
     // Then:
     assertEquals(Int.valueOf(1), a.fn(Int.valueOf(1)));
+  }
+
+  @Test
+  public void shouldEvalDefine() throws Exception {
+    // Given:
+    final PrimitiveAtom define1 = parse("(define id (lambda (a) a))");
+    evaluator.eval(define1);
+
+    // When:
+    final Main.Atom a = evaluator.eval(parse("(id 1)"));
+
+    // Then:
+    assertEquals(Int.valueOf(1), a);
   }
 
   private Symbol lookupGlobal(String val) {
