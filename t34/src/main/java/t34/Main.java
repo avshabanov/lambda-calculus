@@ -8,7 +8,6 @@ import net.sf.cglib.core.ReflectUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -120,18 +119,6 @@ final class Special extends TextAtom {
   public static final Special DEFINE = new Special("define");
   public static final Special OPEN_BRACE = new Special("(");
   public static final Special CLOSE_BRACE = new Special(")");
-
-  public static final Map<String, Special> TOKEN_MAP;
-
-  static {
-    final Map<String, Special> map = new HashMap<>(10);
-    map.put("lambda", LAMBDA);
-    map.put("define", DEFINE);
-    map.put("(", OPEN_BRACE);
-    map.put(")", CLOSE_BRACE);
-    TOKEN_MAP = Collections.unmodifiableMap(map);
-  }
-
   public Special(String text) { super(text); }
 }
 
@@ -314,10 +301,14 @@ final class Parser {
   }
 
   private PrimitiveAtom toToken(boolean isInt, String val, LexicalScope scope) {
+    // number?
     if (isInt) { return Int.valueOf(Integer.parseInt(val)); }
-    final Special special = Special.TOKEN_MAP.get(val);
-    if (special != null) { return special; }
 
+    // special?
+    if (Special.DEFINE.toString().equals(val)) { return Special.DEFINE; }
+    if (Special.LAMBDA.toString().equals(val)) { return Special.LAMBDA; }
+
+    // treat as symbol
     final Location location = scope.lookup(val);
     location.mark();
     return new Symbol(val, location);
