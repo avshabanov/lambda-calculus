@@ -63,10 +63,6 @@ public final class Main {
   }
 }
 
-//
-// Builtins
-//
-
 abstract class PrimitiveAtom extends Main.Atom {
   public Main.Atom fn(Main.Atom arg) { throw new UnsupportedOperationException("Treating " + getClass() + " as Fn"); }
   public int toInt() { throw new UnsupportedOperationException("Treating " + getClass() + " as Int"); }
@@ -75,21 +71,13 @@ abstract class PrimitiveAtom extends Main.Atom {
 final class Int extends PrimitiveAtom {
   private final static int CACHE_SIZE = 256;
   private final static Int[] CACHE = new Int[CACHE_SIZE];
-  static {
-    for (int i = 0; i < CACHE.length; ++i) {
-      CACHE[i] = new Int(i);
-    }
-  }
+  static { for (int i = 0; i < CACHE.length; ++i) { CACHE[i] = new Int(i); } }
 
   private final int value;
-
   private Int(int value) { this.value = value; }
 
   public static Int valueOf(int value) {
-    if (value >= 0 && value < CACHE_SIZE) {
-      return CACHE[value];
-    }
-    return new Int(value);
+    return (value >= 0 && value < CACHE_SIZE) ? CACHE[value] : new Int(value);
   }
 
   public int toInt() { return value; }
@@ -144,8 +132,8 @@ final class Call extends PrimitiveAtom {
 }
 
 final class Lambda extends PrimitiveAtom {
-  final LexicalScope scope;
-  final PrimitiveAtom body;
+  public final LexicalScope scope;
+  public final PrimitiveAtom body;
 
   public Lambda(LexicalScope scope, PrimitiveAtom body) {
     this.scope = scope;
@@ -221,13 +209,9 @@ final class LambdaLexicalScope implements LexicalScope {
   }
 
   public boolean isGlobal() { return false; }
-
   public Map<String, Location> getLocations() { return locations; }
-
   public String getLocalVarName() { return localVarName; }
-
   public ClosureLocation getLocalClosureLocation() { return localClosureLocation; }
-
   public Location lookup(String symbol) {
     Location result = locations.get(symbol);
     if (result != null) { return result; }
@@ -256,8 +240,7 @@ final class Parser {
   }
 
   public PrimitiveAtom next(LexicalScope scope) {
-    // skip whitespace
-    for (; start < end; ++start) {
+    for (; start < end; ++start) { // skip whitespace
       char ch = buffer[start];
       if (ch > ' ') {
         break;
@@ -301,17 +284,14 @@ final class Parser {
   }
 
   private PrimitiveAtom toToken(boolean isInt, String val, LexicalScope scope) {
-    // number?
-    if (isInt) { return Int.valueOf(Integer.parseInt(val)); }
+    if (isInt) { return Int.valueOf(Integer.parseInt(val)); } // number?
 
-    // special?
-    if (Special.DEFINE.toString().equals(val)) { return Special.DEFINE; }
+    if (Special.DEFINE.toString().equals(val)) { return Special.DEFINE; } // special?
     if (Special.LAMBDA.toString().equals(val)) { return Special.LAMBDA; }
 
-    // treat as symbol
     final Location location = scope.lookup(val);
     location.mark();
-    return new Symbol(val, location);
+    return new Symbol(val, location); // default - treat as a symbol
   }
 }
 
@@ -324,16 +304,8 @@ final class AstNodeReader {
   }
 
   private PrimitiveAtom readToken(LexicalScope scope, PrimitiveAtom token) {
-    // is it a symbol or int?
-    if (token instanceof Symbol || token instanceof Int) {
-      return token;
-    }
-
-    // not an open brace? - error
-    if (token != Special.OPEN_BRACE) {
-      throw new RuntimeException("open brace expected");
-    }
-
+    if (token instanceof Symbol || token instanceof Int) { return token; }
+    if (token != Special.OPEN_BRACE) { throw new RuntimeException("open brace expected"); }
     token = parser.next(scope);
     if (token == Special.LAMBDA) { return readLambdaDefinition(scope); }
     if (token == Special.DEFINE) { return readDefine(scope); }
@@ -374,9 +346,7 @@ final class Evaluator implements Opcodes {
   public final GlobalLexicalScope scope = new GlobalLexicalScope();
 
   public Main.Atom eval(Main.Atom node) throws Exception {
-    if (node instanceof Symbol) {
-      return (Main.Atom) env.getClass().getMethod(node.toString()).invoke(env);
-    }
+    if (node instanceof Symbol) { return (Main.Atom) env.getClass().getMethod(node.toString()).invoke(env); }
 
     if (node instanceof Call) {
       final Call call = ((Call) node);
@@ -392,11 +362,11 @@ final class Evaluator implements Opcodes {
   private Main.Fn evalLambda(Lambda lambda) throws Exception { return (Main.Fn) genLambdaClass(lambda).newInstance(); }
 
   private Int evalDefine(Define define) throws Exception {
-    final Main.Fn lambdaFn = evalLambda(define.value);
-    final Class<?> newEnvClass = genNewEnv(define.sym.toString());
-    newEnvClass.getDeclaredField("SYM").set(null, lambdaFn);
-    env = (Main.Env) newEnvClass.newInstance();
-    prevEnvClassName = newEnvClass.getName();
+    final Main.Fn lambdaFn = evalLambda(define.value); // generate function using second define argument
+    final Class<?> newEnvClass = genNewEnv(define.sym.toString()); // generate new environment class
+    newEnvClass.getDeclaredField("SYM").set(null, lambdaFn); // update associated symbol value
+    env = (Main.Env) newEnvClass.newInstance(); // create new environment
+    prevEnvClassName = newEnvClass.getName(); // this update should be the last one or error will break the state
     return Int.valueOf(0);
   }
 
@@ -411,26 +381,21 @@ final class Evaluator implements Opcodes {
     cw.visitField(ACC_PUBLIC + ACC_STATIC, "SYM", "Lt34/Main$Atom;", null, null).visitEnd();
 
     // ctor
-    {
-      mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
-      mv.visitVarInsn(ALOAD, 0);
-      mv.visitMethodInsn(INVOKESPECIAL, parentClassSgn, "<init>", "()V");
-      mv.visitInsn(RETURN);
-      mv.visitMaxs(0, 0);
-      mv.visitEnd();
-    }
+    mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+    mv.visitVarInsn(ALOAD, 0);
+    mv.visitMethodInsn(INVOKESPECIAL, parentClassSgn, "<init>", "()V");
+    mv.visitInsn(RETURN);
+    mv.visitMaxs(0, 0);
+    mv.visitEnd();
 
     // fn - sym
-    {
-      mv = cw.visitMethod(ACC_PUBLIC, sym, "()Lt34/Main$Atom;", null, null);
-      mv.visitFieldInsn(GETSTATIC, className, "SYM", "Lt34/Main$Atom;");
-      mv.visitInsn(ARETURN);
-      mv.visitMaxs(0, 0);
-      mv.visitEnd();
-    }
+    mv = cw.visitMethod(ACC_PUBLIC, sym, "()Lt34/Main$Atom;", null, null);
+    mv.visitFieldInsn(GETSTATIC, className, "SYM", "Lt34/Main$Atom;");
+    mv.visitInsn(ARETURN);
+    mv.visitMaxs(0, 0);
+    mv.visitEnd();
 
-    cw.visitEnd();
-
+    cw.visitEnd(); // end of class
     return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
   }
 
@@ -440,7 +405,6 @@ final class Evaluator implements Opcodes {
     final String className = "GenFn" + (++FN_INDEX);
 
     cw.visit(49, ACC_PUBLIC + ACC_SUPER, className, null, "t34/Main$Fn", null);
-
     cw.visitSource(className + ".java", null);
 
     // fields
@@ -450,47 +414,37 @@ final class Evaluator implements Opcodes {
     }
 
     // ctor
-    {
-      final StringBuilder signature = new StringBuilder(18 * numberOfFields + 5);
-      signature.append('(');
-      for (int i = 0; i < numberOfFields; ++i) { signature.append("Lt34/Main$Atom;"); }
-      signature.append(")V");
-      mv = cw.visitMethod(ACC_PUBLIC, "<init>", signature.toString(), null, null);
+    final StringBuilder signature = new StringBuilder(18 * numberOfFields + 5);
+    signature.append('(');
+    for (int i = 0; i < numberOfFields; ++i) { signature.append("Lt34/Main$Atom;"); }
+    signature.append(")V");
+    mv = cw.visitMethod(ACC_PUBLIC, "<init>", signature.toString(), null, null);
+    mv.visitVarInsn(ALOAD, 0);
+    mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Fn", "<init>", "()V");
+    for (int i = 0; i < numberOfFields; ++i) {
       mv.visitVarInsn(ALOAD, 0);
-      mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Fn", "<init>", "()V");
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitVarInsn(ALOAD, i + 1);
-        mv.visitFieldInsn(PUTFIELD, className, "c" + i, "Lt34/Main$Atom;");
-      }
-      mv.visitInsn(RETURN);
-
-      mv.visitMaxs(0, 0); // 1 + numberOfFields
-      mv.visitEnd();
+      mv.visitVarInsn(ALOAD, i + 1);
+      mv.visitFieldInsn(PUTFIELD, className, "c" + i, "Lt34/Main$Atom;");
     }
+    mv.visitInsn(RETURN);
+    mv.visitMaxs(0, 0);
+    mv.visitEnd();
 
     // @Override fn
-    {
-      mv = cw.visitMethod(ACC_PUBLIC, "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;", null, null);
-
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
-      }
-
-      mv.visitVarInsn(ALOAD, 1);
-
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
-      }
-
-      mv.visitInsn(ARETURN);
-      mv.visitMaxs(0, 0);
-      mv.visitEnd();
+    mv = cw.visitMethod(ACC_PUBLIC, "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;", null, null);
+    for (int i = 0; i < numberOfFields; ++i) {
+      mv.visitVarInsn(ALOAD, 0);
+      mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
     }
+    mv.visitVarInsn(ALOAD, 1);
+    for (int i = 0; i < numberOfFields; ++i) {
+      mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
+    }
+    mv.visitInsn(ARETURN);
+    mv.visitMaxs(0, 0);
+    mv.visitEnd();
 
-    cw.visitEnd();
-
+    cw.visitEnd(); // end of class
     return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
   }
 }
