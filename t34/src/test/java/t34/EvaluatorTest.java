@@ -40,7 +40,35 @@ public class EvaluatorTest {
     assertTrue(a instanceof Inc);
   }
 
+  @Test
+  public void shouldEvalCall() {
+    // Given:
+    final PrimitiveAtom call = parse("(inc 0)");
+
+    // When:
+    final Main.Atom a = evaluator.eval(call);
+
+    // Then:
+    assertEquals(1, a.toInt());
+  }
+
+  @Test
+  public void shouldEvalNestedCall() {
+    // Given:
+    final PrimitiveAtom call = parse("(inc (inc (inc 0)))");
+
+    // When:
+    final Main.Atom a = evaluator.eval(call);
+
+    // Then:
+    assertEquals(3, a.toInt());
+  }
+
   private Symbol lookupGlobal(String val) {
     return new Symbol(val, envHolder.scope.lookup(val));
+  }
+
+  private PrimitiveAtom parse(String input) {
+    return AstNodeReaderTest.createReader(input).read(envHolder.scope);
   }
 }

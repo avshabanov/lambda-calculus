@@ -10,9 +10,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.CharBuffer;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -477,10 +475,13 @@ final class Evaluator implements Opcodes {
       }
     }
 
-    if (node instanceof PrimitiveAtom) {
-      return node;
+    if (node instanceof Call) {
+      final Call call = ((Call) node);
+      return eval(call.lhs).fn(eval(call.rhs));
     }
 
-    throw new UnsupportedOperationException();
+    if (node instanceof PrimitiveAtom || node instanceof Main.Fn) { return node; }
+
+    throw new UnsupportedOperationException("Can't eval " + node);
   }
 }
