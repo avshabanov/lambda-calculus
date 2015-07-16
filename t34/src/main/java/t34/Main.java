@@ -27,8 +27,8 @@ public final class Main {
 
   // initial environment
   public static class Env {
-    private static final Inc INC = new Inc();
-    @SuppressWarnings("unused") public Atom get_inc() { return INC; }
+    private static final Inc _INC = new Inc();
+    @SuppressWarnings("unused") public Atom inc() { return _INC; }
   }
 
   public static void main(String[] args) throws IOException {
@@ -42,8 +42,7 @@ public final class Main {
   private static void startRepl(BufferedReader r) throws IOException {
     final Parser parser = new Parser();
     final AstNodeReader reader = new AstNodeReader(parser);
-    final EnvHolder envHolder = new EnvHolder();
-    final Evaluator evaluator = new Evaluator(envHolder);
+    final Evaluator evaluator = new Evaluator();
 
     for (;;) {
       System.out.print("> ");
@@ -51,7 +50,7 @@ public final class Main {
       if ("(quit)".equals(line)) { return; }
       parser.init(line.toCharArray(), 0, line.length());
       try {
-        System.out.println(evaluator.eval(reader.read(envHolder.scope)));
+        System.out.println(evaluator.eval(reader.read(evaluator.scope)));
       } catch (RuntimeException e) {
         System.err.println(";; Error");
         e.printStackTrace(System.err);
@@ -90,6 +89,8 @@ final class Int extends PrimitiveAtom {
   }
 
   public int toInt() { return value; }
+  public boolean equals(Object o) { return this == o || o instanceof Int && value == ((Int) o).value; }
+  public int hashCode() { return value; }
   public String toString() { return Integer.toString(value); }
 }
 
@@ -166,94 +167,6 @@ final class Define extends PrimitiveAtom {
   public Define(Symbol sym, Lambda value) {
     this.sym = sym;
     this.value = value;
-  }
-}
-
-
-//
-// Code Generator
-//
-
-final class AtomGenerator implements Opcodes {
-  private final ClassLoader loader;
-  private int index = 0;
-
-  public AtomGenerator(ClassLoader loader) {
-    this.loader = loader;
-  }
-
-  public Class<?> generate(int numberOfFields) {
-    ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-    MethodVisitor mv;
-    final String className = "GenFn" + (++index);
-
-    cw.visit(49,
-        ACC_PUBLIC + ACC_SUPER,
-        className,
-        null,
-        "t34/Main$Fn",
-        null);
-
-    cw.visitSource(className + ".java", null);
-
-    // fields
-    for (int i = 0; i < numberOfFields; ++i) {
-      cw.visitField(ACC_PRIVATE, "c" + i, "Lt34/Main$Atom;", null, null).visitEnd();
-    }
-
-    // ctor
-    {
-      final StringBuilder signature = new StringBuilder(18 * numberOfFields + 5);
-      signature.append('(');
-      for (int i = 0; i < numberOfFields; ++i) { signature.append("Lt34/Main$Atom;"); }
-      signature.append(")V");
-      mv = cw.visitMethod(ACC_PUBLIC, "<init>", signature.toString(), null, null);
-      mv.visitVarInsn(ALOAD, 0);
-      mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Fn", "<init>", "()V");
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitVarInsn(ALOAD, i + 1);
-        mv.visitFieldInsn(PUTFIELD, className, "c" + i, "Lt34/Main$Atom;");
-      }
-      mv.visitInsn(RETURN);
-
-      mv.visitMaxs(0, 0); // 1 + numberOfFields
-      mv.visitEnd();
-    }
-
-    // @Override fn
-    {
-      mv = cw.visitMethod(ACC_PUBLIC,
-          "fn",
-          "(Lt34/Main$Atom;)Lt34/Main$Atom;",
-          null,
-          null);
-
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
-      }
-
-      mv.visitVarInsn(ALOAD, 1);
-
-      for (int i = 0; i < numberOfFields; ++i) {
-        mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
-      }
-
-      mv.visitInsn(ARETURN);
-
-      mv.visitMaxs(0, 0);
-      mv.visitEnd();
-    }
-
-    cw.visitEnd();
-
-    try {
-      //noinspection unchecked
-      return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
 
@@ -452,24 +365,19 @@ final class AstNodeReader {
   }
 }
 
-final class EnvHolder {
-  public Main.Env env = new Main.Env();
-  public final GlobalLexicalScope scope = new GlobalLexicalScope();
-}
-
 final class Evaluator implements Opcodes {
-  private final EnvHolder envHolder;
+  private Main.Env env = new Main.Env();
+  private int genFnIndex = 0;
+  private final ClassLoader loader = getClass().getClassLoader();
 
-  public Evaluator(EnvHolder envHolder) {
-    this.envHolder = envHolder;
-  }
+  public final GlobalLexicalScope scope = new GlobalLexicalScope();
 
-  Main.Atom eval(Main.Atom node) {
+  public Main.Atom eval(Main.Atom node) {
     if (node instanceof Symbol) {
       // get from env
       try {
-        final Method m = envHolder.env.getClass().getMethod("get_" + node.toString());
-        return (Main.Atom) m.invoke(envHolder.env);
+        final Method m = env.getClass().getMethod(node.toString());
+        return (Main.Atom) m.invoke(env);
       } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
         throw new RuntimeException(e);
       }
@@ -480,8 +388,84 @@ final class Evaluator implements Opcodes {
       return eval(call.lhs).fn(eval(call.rhs));
     }
 
+    if (node instanceof Lambda) { return evalLambda((Lambda) node); }
+
     if (node instanceof PrimitiveAtom || node instanceof Main.Fn) { return node; }
 
     throw new UnsupportedOperationException("Can't eval " + node);
+  }
+
+  private Main.Fn evalLambda(Lambda lambda) {
+    assert lambda.scope.getLocalClosureLocation().getParameterIndex() == 0 : "Lambda to eval should be global";
+    try {
+      return (Main.Fn) genLambdaClass(lambda).newInstance();
+    } catch (InstantiationException | IllegalAccessException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private Class<?> genLambdaClass(Lambda lambda) {
+    ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+    MethodVisitor mv;
+    final String className = "GenFn" + (++genFnIndex);
+
+    cw.visit(49, ACC_PUBLIC + ACC_SUPER, className, null, "t34/Main$Fn", null);
+
+    cw.visitSource(className + ".java", null);
+
+    // fields
+    int numberOfFields = lambda.scope.getLocalClosureLocation().getParameterIndex();
+    for (int i = 0; i < numberOfFields; ++i) {
+      cw.visitField(ACC_PRIVATE, "c" + i, "Lt34/Main$Atom;", null, null).visitEnd();
+    }
+
+    // ctor
+    {
+      final StringBuilder signature = new StringBuilder(18 * numberOfFields + 5);
+      signature.append('(');
+      for (int i = 0; i < numberOfFields; ++i) { signature.append("Lt34/Main$Atom;"); }
+      signature.append(")V");
+      mv = cw.visitMethod(ACC_PUBLIC, "<init>", signature.toString(), null, null);
+      mv.visitVarInsn(ALOAD, 0);
+      mv.visitMethodInsn(INVOKESPECIAL, "t34/Main$Fn", "<init>", "()V");
+      for (int i = 0; i < numberOfFields; ++i) {
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, i + 1);
+        mv.visitFieldInsn(PUTFIELD, className, "c" + i, "Lt34/Main$Atom;");
+      }
+      mv.visitInsn(RETURN);
+
+      mv.visitMaxs(0, 0); // 1 + numberOfFields
+      mv.visitEnd();
+    }
+
+    // @Override fn
+    {
+      mv = cw.visitMethod(ACC_PUBLIC, "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;", null, null);
+
+      for (int i = 0; i < numberOfFields; ++i) {
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
+      }
+
+      mv.visitVarInsn(ALOAD, 1);
+
+      for (int i = 0; i < numberOfFields; ++i) {
+        mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
+      }
+
+      mv.visitInsn(ARETURN);
+      mv.visitMaxs(0, 0);
+      mv.visitEnd();
+    }
+
+    cw.visitEnd();
+
+    try {
+      //noinspection unchecked
+      return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
   }
 }

@@ -10,12 +10,11 @@ import static org.junit.Assert.assertTrue;
  * Tests evaluator
  */
 public class EvaluatorTest {
-  private final EnvHolder envHolder = new EnvHolder();
   private Evaluator evaluator;
 
   @Before
   public void init() {
-    evaluator = new Evaluator(envHolder);
+    evaluator = new Evaluator();
   }
 
   @Test
@@ -64,11 +63,23 @@ public class EvaluatorTest {
     assertEquals(3, a.toInt());
   }
 
+  @Test
+  public void shouldEvalSimpleLambdaExpr() {
+    // Given:
+    final PrimitiveAtom lambda = parse("(lambda (a) a)");
+
+    // When:
+    final Main.Atom a = evaluator.eval(lambda);
+
+    // Then:
+    assertEquals(Int.valueOf(1), a.fn(Int.valueOf(1)));
+  }
+
   private Symbol lookupGlobal(String val) {
-    return new Symbol(val, envHolder.scope.lookup(val));
+    return new Symbol(val, evaluator.scope.lookup(val));
   }
 
   private PrimitiveAtom parse(String input) {
-    return AstNodeReaderTest.createReader(input).read(envHolder.scope);
+    return AstNodeReaderTest.createReader(input).read(evaluator.scope);
   }
 }
