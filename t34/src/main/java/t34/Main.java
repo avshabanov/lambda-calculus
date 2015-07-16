@@ -253,9 +253,9 @@ final class ParserException extends RuntimeException {
 }
 
 final class Parser {
-  char[] buffer;
-  int start;
-  int end;
+  private char[] buffer;
+  private int start;
+  private int end;
 
   public Parser init(char[] buffer, int start, int end) {
     this.buffer = buffer;
