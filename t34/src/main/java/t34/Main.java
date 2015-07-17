@@ -23,13 +23,12 @@ public final class Main {
     public int toInt() { throw new UnsupportedOperationException("Treating Fn as Int"); }
   }
 
-  // initial environment
   public static class Env {
-    private static final Atom INC = new Inc();
-    private static final Atom DEC = new Dec();
-    @SuppressWarnings("unused") public Atom inc() { return INC; }
-    @SuppressWarnings("unused") public Atom dec() { return DEC; }
+    @SuppressWarnings("unused") public Atom inc() { return Inc.INSTANCE; }
+    @SuppressWarnings("unused") public Atom dec() { return Dec.INSTANCE; }
   }
+
+  public static Main.Env ENV = new Main.Env();
 
   public static void main(String[] args) throws IOException {
     System.out.println(";; Simple Lambda Calc Interpreter");
@@ -87,11 +86,15 @@ final class Int extends PrimitiveAtom {
 }
 
 final class Inc extends Main.Fn {
+  private Inc() {}
+  public static final Inc INSTANCE = new Inc();
   public Main.Atom fn(Main.Atom arg) { return Int.valueOf(arg.toInt() + 1); }
   public String toString() { return "<lambda#inc>"; }
 }
 
 final class Dec extends Main.Fn {
+  private Dec() {}
+  public static final Dec INSTANCE = new Dec();
   public Main.Atom fn(Main.Atom arg) { return Int.valueOf(arg.toInt() - 1); }
   public String toString() { return "<lambda#dec>"; }
 }
@@ -145,9 +148,9 @@ final class Lambda extends PrimitiveAtom {
 
 final class Define extends PrimitiveAtom {
   public final Symbol sym;
-  public final Lambda value;
+  public final PrimitiveAtom value;
 
-  public Define(Symbol sym, Lambda value) {
+  public Define(Symbol sym, PrimitiveAtom value) {
     this.sym = sym;
     this.value = value;
   }
@@ -247,7 +250,6 @@ final class Parser {
       }
     }
 
-    boolean isInt = false;
     int tokenStart = start;
     for (; start < end; ++start) {
       char ch = buffer[start];
@@ -260,31 +262,22 @@ final class Parser {
             ++start;
             return Special.CLOSE_BRACE;
         }
-
-        if (ch >= '0' && ch <= '9') {
-          isInt = true;
-          continue;
-        }
       }
 
-      if (isInt) {
-        if (ch >= '0' && ch <= '9') { continue; }
-        break;
-      }
-
-      if (ch < 'a' || ch > 'z') { break; }
+      if ((ch < '0' || ch > '9') && (ch < 'a' || ch > 'z')) { break; }
     }
 
     if (tokenStart == start) { throw new ParserException("unexpected end of input or illegal character"); }
-    return toToken(isInt, new String(buffer, tokenStart, start - tokenStart), scope);
+    return toToken(new String(buffer, tokenStart, start - tokenStart), scope);
   }
 
   public void expect(Special token, LexicalScope scope) {
     if (next(scope) != token) { throw new ParserException("token expected: " + token.toString()); }
   }
 
-  private PrimitiveAtom toToken(boolean isInt, String val, LexicalScope scope) {
-    if (isInt) { return Int.valueOf(Integer.parseInt(val)); } // number?
+  private PrimitiveAtom toToken(String val, LexicalScope scope) {
+    final char c0 = val.charAt(0);
+    if (c0 >= '0' && c0 <= '9') { return Int.valueOf(Integer.parseInt(val)); } // number?
 
     if (Special.DEFINE.toString().equals(val)) { return Special.DEFINE; } // special?
     if (Special.LAMBDA.toString().equals(val)) { return Special.LAMBDA; }
@@ -318,9 +311,7 @@ final class AstNodeReader {
 
   private Define readDefine(LexicalScope scope) {
     final Symbol sym = (Symbol) parser.next(scope); // TODO: check and report if not a symbol
-    parser.expect(Special.OPEN_BRACE, scope);
-    parser.expect(Special.LAMBDA, scope);
-    return new Define(sym, readLambdaDefinition(scope));
+    return new Define(sym, read(scope));
   }
 
   private Lambda readLambdaDefinition(LexicalScope parentScope) {
@@ -337,16 +328,15 @@ final class AstNodeReader {
 }
 
 final class Evaluator implements Opcodes {
-  private Main.Env env = new Main.Env();
   private static int FN_INDEX = 0;
   private static int ENV_INDEX = 0;
   private String prevEnvClassName = "t34/Main$Env";
-  private final ClassLoader loader = getClass().getClassLoader();
+  private static final ClassLoader LOADER = Evaluator.class.getClassLoader();
 
   public final GlobalLexicalScope scope = new GlobalLexicalScope();
 
   public Main.Atom eval(Main.Atom node) throws Exception {
-    if (node instanceof Symbol) { return (Main.Atom) env.getClass().getMethod(node.toString()).invoke(env); }
+    if (node instanceof Symbol) { return (Main.Atom) Main.ENV.getClass().getMethod(node.toString()).invoke(Main.ENV); }
 
     if (node instanceof Call) {
       final Call call = ((Call) node);
@@ -362,10 +352,10 @@ final class Evaluator implements Opcodes {
   private Main.Fn evalLambda(Lambda lambda) throws Exception { return (Main.Fn) genLambdaClass(lambda).newInstance(); }
 
   private Int evalDefine(Define define) throws Exception {
-    final Main.Fn lambdaFn = evalLambda(define.value); // generate function using second define argument
+    final Main.Atom evalVal = eval(define.value); // generate function using second define argument
     final Class<?> newEnvClass = genNewEnv(define.sym.toString()); // generate new environment class
-    newEnvClass.getDeclaredField("SYM").set(null, lambdaFn); // update associated symbol value
-    env = (Main.Env) newEnvClass.newInstance(); // create new environment
+    newEnvClass.getDeclaredField("SYM").set(null, evalVal); // update associated symbol value
+    Main.ENV = (Main.Env) newEnvClass.newInstance(); // create new environment
     prevEnvClassName = newEnvClass.getName(); // this update should be the last one or error will break the state
     return Int.valueOf(0);
   }
@@ -396,10 +386,10 @@ final class Evaluator implements Opcodes {
     mv.visitEnd();
 
     cw.visitEnd(); // end of class
-    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
+    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), LOADER);
   }
 
-  private Class<?> genLambdaClass(Lambda lambda) throws Exception {
+  private static Class<?> genLambdaClass(Lambda lambda) throws Exception {
     ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
     MethodVisitor mv;
     final String className = "GenFn" + (++FN_INDEX);
@@ -432,19 +422,61 @@ final class Evaluator implements Opcodes {
 
     // @Override fn
     mv = cw.visitMethod(ACC_PUBLIC, "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;", null, null);
-    for (int i = 0; i < numberOfFields; ++i) {
-      mv.visitVarInsn(ALOAD, 0);
-      mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
-    }
-    mv.visitVarInsn(ALOAD, 1);
-    for (int i = 0; i < numberOfFields; ++i) {
-      mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
-    }
+    genBody(lambda.body, className, mv);
     mv.visitInsn(ARETURN);
     mv.visitMaxs(0, 0);
     mv.visitEnd();
 
     cw.visitEnd(); // end of class
-    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), loader);
+    return (Class<?>) ReflectUtils.defineClass(className, cw.toByteArray(), LOADER);
+  }
+
+  private static void genBody(PrimitiveAtom atom, String className, MethodVisitor mv) throws Exception {
+    if (atom instanceof Symbol) {
+      final Symbol symbol = (Symbol) atom;
+      if (symbol.location == SimpleLocation.GLOBAL) {
+        mv.visitFieldInsn(GETSTATIC, "t34/Main", "ENV", "Lt34/Main$Env;");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Env", symbol.toString(), "()Lt34/Main$Atom;");
+        return;
+      } else if (symbol.location == SimpleLocation.VAR) {
+        mv.visitVarInsn(ALOAD, 1);
+        return;
+      }
+      final ClosureLocation closureLocation = (ClosureLocation) symbol.location;
+      mv.visitVarInsn(ALOAD, 0);
+      mv.visitFieldInsn(GETFIELD, className, "c" + closureLocation.getParameterIndex(), "Lt34/Main$Atom;");
+      return;
+    }
+
+    if (atom instanceof Call) {
+      final Call call = (Call) atom;
+      genBody(call.lhs, className, mv);
+      genBody(call.rhs, className, mv);
+      mv.visitMethodInsn(INVOKEVIRTUAL, "t34/Main$Atom", "fn", "(Lt34/Main$Atom;)Lt34/Main$Atom;");
+      return;
+    }
+
+    if (atom instanceof Lambda) {
+      final Lambda lambda = (Lambda) atom;
+      final Class<?> lambdaClass = genLambdaClass(lambda);
+      final String lambdaClassName = lambdaClass.getName();
+      mv.visitTypeInsn(NEW, lambdaClassName);
+      mv.visitInsn(DUP);
+      int totalArgCount = lambda.scope.getLocalClosureLocation().getParameterIndex();
+      int parentFieldCount = totalArgCount - 1;
+      for (int i = 0; i < parentFieldCount; ++i) {
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitFieldInsn(GETFIELD, className, "c" + i, "Lt34/Main$Atom;");
+      }
+      mv.visitVarInsn(ALOAD, 1);
+      final StringBuilder signatureBuilder = new StringBuilder(10 + 15 * totalArgCount);
+      signatureBuilder.append('(');
+      for (int i = 0; i < totalArgCount; ++i) { signatureBuilder.append("Lt34/Main$Atom;"); }
+      signatureBuilder.append(")V");
+      mv.visitMethodInsn(INVOKESPECIAL, lambdaClassName, "<init>", signatureBuilder.toString());
+      return;
+    }
+
+    throw new UnsupportedOperationException("Unsupported atom in lambda body=" + atom);
   }
 }

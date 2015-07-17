@@ -15,6 +15,7 @@ public class EvaluatorTest {
   @Before
   public void init() {
     evaluator = new Evaluator();
+    Main.ENV = new Main.Env(); // reset environment
   }
 
   @Test
@@ -88,13 +89,49 @@ public class EvaluatorTest {
   }
 
   @Test
+  public void shouldEvalPrimitiveDefine() throws Exception {
+    // Given:
+    evaluator.eval(parse("(define zero 0)"));
+    evaluator.eval(parse("(define one (inc zero))"));
+
+    // When:
+    final Main.Atom a0 = evaluator.eval(parse("zero"));
+    final Main.Atom a1 = evaluator.eval(parse("one"));
+
+    // Then:
+    assertEquals(Int.valueOf(0), a0);
+    assertEquals(Int.valueOf(1), a1);
+  }
+
+  @Test
   public void shouldEvalDefine() throws Exception {
     // Given:
-    final PrimitiveAtom define1 = parse("(define id (lambda (a) a))");
-    evaluator.eval(define1);
+    evaluator.eval(parse("(define id (lambda (a) a))"));
 
     // When:
     final Main.Atom a = evaluator.eval(parse("(id 1)"));
+
+    // Then:
+    assertEquals(Int.valueOf(1), a);
+  }
+
+  @Test
+  public void shouldEvalNestedLambda() throws Exception {
+    // Given/When:
+    final Main.Atom a = evaluator.eval(parse("((lambda (a) (inc a)) 0)"));
+
+    // Then:
+    assertEquals(Int.valueOf(1), a);
+  }
+
+  @Test
+  public void shouldEvalLambdaCalc() throws Exception {
+    // Given:
+    evaluator.eval(parse("(define zero (lambda (s) (lambda (z) z)))"));
+    evaluator.eval(parse("(define succ (lambda (n) (lambda (s) (lambda (z) (s ((n s) z))))))"));
+
+    // When:
+    final Main.Atom a = evaluator.eval(parse("(((succ zero) inc) 0)"));
 
     // Then:
     assertEquals(Int.valueOf(1), a);

@@ -55,14 +55,14 @@ public class AstNodeReaderTest {
   @Test
   public void shouldReadNestedLambdas() {
     // Given:
-    final AstNodeReader reader = createReader("(lambda (a) (lambda (b) (b a)))");
+    final AstNodeReader reader = createReader("(lambda (a0) (lambda (b) (b a0)))");
 
     // When:
     final PrimitiveAtom node = reader.read(globalScope);
 
     // Then:
     final String nodeStr = toString(node);
-    assertEquals("(lambda (a:CLOSURE[0]) (lambda (b:CLOSURE[1]) (b:VAR a:CLOSURE[0])))", nodeStr);
+    assertEquals("(lambda (a0:CLOSURE[0]) (lambda (b:CLOSURE[1]) (b:VAR a0:CLOSURE[0])))", nodeStr);
   }
 
   @Test
@@ -107,7 +107,19 @@ public class AstNodeReaderTest {
   }
 
   @Test
-  public void shouldReadDefine() {
+  public void shouldReadSimpleLambda() {
+    // Given:
+    final AstNodeReader reader = createReader("(define one 1)");
+
+    // When:
+    final PrimitiveAtom node = reader.read(globalScope);
+
+    // Then:
+    assertTrue(node instanceof Define);
+  }
+
+  @Test
+  public void shouldReadLambdaDefine() {
     // Given:
     final AstNodeReader reader = createReader("(define id (lambda (x) x))");
 
