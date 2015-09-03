@@ -92,9 +92,10 @@
               n)
               (% s (% p (% z (s (((n s) p) z))))))))
 
-(def pred (% n (% s (% p (% z p (((n s) p) z))))))
-
-
+(def pred (% n
+            (((l-if (l-positive? n))
+               n)
+              (% s (% p (% z (p (((n s) p) z))))))))
 
 ;;
 ;; Boolean Testing
