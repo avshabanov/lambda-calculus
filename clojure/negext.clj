@@ -58,11 +58,7 @@
 ;; Definitions
 ;;
 
-
-
-;;
 ;; Boolean logic
-;;
 
 (def l-true (% a (% b a)))                ; logical 'true'
 (def l-false (% a (% b b)))               ; logical 'false'
@@ -83,23 +79,36 @@
 ;; Numerals
 ;;
 
+
+;; Zero number
 (def zero (% s (% p (% z z))))
 
-;;Naive - (def succ (% n (% s (% p (% z s (((n s) p) z))))))
+;;Naive succ def - it won't work - (def succ (% n (% s (% p (% z s (((n s) p) z))))))
 
+;; predecessor (decrement) for positive numbers only
+;;    PRED := λn.λf.λb.λx.n (λg.λh.h (g f)) b (λu.x) (λu.u)
+(def pos-pred (% n (% f (% b (% x n (% g (% h h (g f))) b (% u x) (% u u))))))
+;; (numcall (pos-pred (succ one)))
+
+;; successor (increment) for negative numbers only
+(def neg-succ (% n (% b (% f (% x n b (% g (% h h (g f))) (% u x) (% u u))))))
+;; (numcall (neg-succ (pred zero)))
+;; (numcall (neg-succ (pred (pred zero))))
+
+;; Successor operation (increment)
 (def succ (% n
-            (((l-if (l-negative? n))
-              n)
+            (((l-if (l-negative? n)) (neg-succ n))
               (% s (% p (% z (s (((n s) p) z))))))))
 
+;; Predecessor operation (decrement)
 (def pred (% n
-            (((l-if (l-positive? n))
-               n)
+            (((l-if (l-positive? n)) (pos-pred n))
               (% s (% p (% z (p (((n s) p) z))))))))
 
-;;
+;; easy-to-use definitions
+(def one (succ zero))
+
 ;; Boolean Testing
-;;
 
 (defmacro l-call [& body]
   (let [extbody (concat body '(true false))]
@@ -118,7 +127,6 @@
 ;; Numerals Testing
 ;;
 
-
 ;; calls lambda expression and uses 'inc' (+1) as a sequence function
 ;; and 0 (zero) as zero function
 (defmacro numcall [& body]
@@ -127,4 +135,8 @@
 
 (assert (= 0 (numcall zero)))
 (assert (= 1 (numcall (succ zero))))
+(assert (= 2 (numcall (succ (succ zero)))))
 (assert (= -1 (numcall (pred zero))))
+(assert (= -2 (numcall (pred (pred zero)))))
+(assert (= -1 (numcall (succ (pred (pred zero))))))
+(assert (= 2 (numcall (pred (succ (succ (succ zero)))))))
